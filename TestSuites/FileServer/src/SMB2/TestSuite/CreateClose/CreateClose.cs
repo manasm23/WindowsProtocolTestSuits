@@ -12,6 +12,7 @@ using Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2;
 using Microsoft.Protocols.TestTools.StackSdk.Security.Sspi;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Threading.Tasks;
+using Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2.Common;
 
 namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
 {
@@ -215,8 +216,8 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
             client.SessionSetup(TestConfig.DefaultSecurityPackage, TestConfig.SutComputerName, accountCredential, false);
             uint treeId;
             client.TreeConnect(sharePath, out treeId);
-            FILEID fileId;
-            Smb2CreateContextResponse[] createContextResponse;
+            //FILEID fileId;
+            //Smb2CreateContextResponse[] createContextResponse;
 
             AccessMask accessMask = AccessMask.GENERIC_READ | AccessMask.GENERIC_WRITE | AccessMask.DELETE;
             accessMask = isValidAccessMask ? accessMask : AccessMask.GENERIC_READ | AccessMask.GENERIC_WRITE;
@@ -224,8 +225,9 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
             createOption = isDeleteFlagSet ? (createOption | CreateOptions_Values.FILE_DELETE_ON_CLOSE) : createOption;
             // The createDisposition is set to FILE_OPEN if the file already existed; else, if it's the first time to create a file, this field should be set to FILE_CREATE
             createDisposition = (fileNameType == FileNameType.ExistedValidFileName) ? CreateDisposition_Values.FILE_OPEN : CreateDisposition_Values.FILE_CREATE;
-            fileName = GetFileName(isDirectory, fileNameType);
-            BaseTestSite.Log.Add(LogEntryKind.TestStep, "Client sends CREATE request with create option: {0} and create disposition: {1}", createOption, createDisposition);
+            
+            //fileName = GetFileName(isDirectory, fileNameType);
+            //BaseTestSite.Log.Add(LogEntryKind.TestStep, "Client sends CREATE request with create option: {0} and create disposition: {1}", createOption, createDisposition);
             //uint status = client.Create(
             //    treeId,
             //    fileName,
@@ -241,6 +243,51 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
 
             List<ulong> messageIdsList = new List<ulong>();
 
+            //Task t1 = Task.Factory.StartNew(() =>
+            //{
+            for (int i = 0; i <= 3; i++)
+            {
+                AsyncCreateRequest(client, isDirectory, fileNameType, createOption, createDisposition, treeId, accessMask, messageIdsList);
+            }
+            //});
+
+            //t1.Wait();
+
+            //messageIdsList.Add(t2.Result);
+            //if (t1.IsCompleted)
+            //{
+            foreach (ulong messageId in messageIdsList)
+            {
+                Task<TCPResponse> taskResponse = Task.Factory.StartNew(() => client.CreateResponse1(messageId,
+                    checker: (header, response) =>
+                    {
+                        CheckCreateResponse(isNonAdmin, createOption, accessMask, header, response, fileNameType);
+                    }));
+
+                if (taskResponse.Result.status == Smb2Status.STATUS_SUCCESS)
+                {
+                    BaseTestSite.Log.Add(LogEntryKind.TestStep, "Tear down the client by sending the following requests: CLOSE; TREE_DISCONNECT; LOG_OFF.");
+                    client.Close(treeId, taskResponse.Result.fileId);
+                }
+            }
+
+            //if (status == Smb2Status.STATUS_SUCCESS)
+            //{
+            //    BaseTestSite.Log.Add(LogEntryKind.TestStep, "Tear down the client by sending the following requests: CLOSE; TREE_DISCONNECT; LOG_OFF.");
+            //client.Close(treeId, fileId);
+            //}
+
+            client.TreeDisconnect(treeId);
+            client.LogOff();
+            //}
+        }
+
+        private void AsyncCreateRequest(Smb2FunctionalClient client, bool isDirectory, FileNameType fileNameType, CreateOptions_Values createOption,
+            CreateDisposition_Values createDisposition, uint treeId, AccessMask accessMask, List<ulong> messageIdsList)
+        {
+            fileName = GetFileName(isDirectory, fileNameType);
+            BaseTestSite.Log.Add(LogEntryKind.TestStep, "Client sends CREATE request with create option: {0} and create disposition: {1}", createOption, createDisposition);
+
             Task<ulong> t1 = Task.Factory.StartNew(() => client.Create1(
                  treeId,
                  fileName,
@@ -248,41 +295,16 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
                  accessMask: accessMask,
                  createDisposition: createDisposition));
 
+            //ulong msgId = client.Create1(
+            //     treeId,
+            //     fileName,
+            //     createOption,
+            //     accessMask: accessMask,
+            //     createDisposition: createDisposition);
+
+            //Task.Factory.StartNew(() => WaitForResponse(t1.Result, client));            
             //t1.Wait();
-
             messageIdsList.Add(t1.Result);
-
-            fileName = GetFileName(isDirectory, fileNameType);
-
-            Task<ulong> t2 = Task.Factory.StartNew(() => client.Create1(
-                 treeId,
-                 fileName,
-                 createOption,
-                 accessMask: accessMask,
-                 createDisposition: createDisposition));
-
-            //t2.Wait();
-
-            messageIdsList.Add(t2.Result);
-
-            foreach (ulong ul in messageIdsList)
-            {
-                //uint status = client.CreateResponse(ul, out fileId, out createContextResponse);
-                Task<uint> taskResponse = Task.Factory.StartNew(() => client.CreateResponse(ul, out fileId, out createContextResponse));
-                //if (taskResponse.Result == Smb2Status.STATUS_SUCCESS)
-                //{
-                //    BaseTestSite.Log.Add(LogEntryKind.TestStep, "Tear down the client by sending the following requests: CLOSE; TREE_DISCONNECT; LOG_OFF.");
-                //}
-            }
-
-            //if (status == Smb2Status.STATUS_SUCCESS)
-            //{
-            //    BaseTestSite.Log.Add(LogEntryKind.TestStep, "Tear down the client by sending the following requests: CLOSE; TREE_DISCONNECT; LOG_OFF.");
-                //client.Close(treeId, fileId);
-            //}
-
-            client.TreeDisconnect(treeId);
-            client.LogOff();
         }
 
         /// <summary>

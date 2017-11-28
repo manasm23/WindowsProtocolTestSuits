@@ -90,7 +90,7 @@
     <Reference Include="System.ServiceModel" />
   </ItemGroup>
   <ItemGroup>
-	<Compile Include="..\..\AssemblyInfo\SharedAssemblyInfo.cs">
+    <Compile Include="..\..\AssemblyInfo\SharedAssemblyInfo.cs">
       <Link>SharedAssemblyInfo.cs</Link>
     </Compile>
     <Compile Include="Client\Smb2ClientTransport.cs" />
@@ -109,6 +109,7 @@
     <Compile Include="Common\PreauthIntegrityContext.cs" />
     <Compile Include="Common\Smb2Crypto.cs" />
     <Compile Include="Common\Smb2CryptoInfo.cs" />
+    <Compile Include="Common\TCPResponse.cs" />
     <Compile Include="DataTypes\Smb2CreateAppInstanceVersion.cs" />
     <Compile Include="DataTypes\Smb2CreateDurableHandleResponseV2.cs" />
     <Compile Include="DataTypes\Smb2CreateAllocationSize.cs" />

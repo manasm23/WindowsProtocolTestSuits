@@ -10,6 +10,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Text;
+using Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2.Common;
 
 namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
 {
@@ -973,15 +974,11 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             RequestedOplockLevel_Values requestedOplockLevel_Values = RequestedOplockLevel_Values.OPLOCK_LEVEL_NONE,
             Smb2CreateContextRequest[] createContexts = null,
             AccessMask accessMask = AccessMask.GENERIC_READ | AccessMask.GENERIC_WRITE | AccessMask.DELETE,
-            ShareAccess_Values shareAccess = ShareAccess_Values.FILE_SHARE_READ | ShareAccess_Values.FILE_SHARE_WRITE | ShareAccess_Values.FILE_SHARE_DELETE,
-            ResponseChecker<CREATE_Response> checker = null,
+            ShareAccess_Values shareAccess = ShareAccess_Values.FILE_SHARE_READ | ShareAccess_Values.FILE_SHARE_WRITE | ShareAccess_Values.FILE_SHARE_DELETE,            
             ImpersonationLevel_Values impersonationLevel = ImpersonationLevel_Values.Impersonation,
             CreateDisposition_Values createDisposition = CreateDisposition_Values.FILE_OPEN_IF,
             File_Attributes fileAttributes = File_Attributes.NONE)
         {
-            Packet_Header header;
-            CREATE_Response createResponse;
-
             ulong messageId = generateMessageId(sequenceWindow);
             ushort creditCharge = generateCreditCharge(1);
 
@@ -1006,12 +1003,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
                 requestedOplockLevel_Values,
                 createContexts,                
                 sessionChannelSequence);
-
-            //ProduceCredit(messageId, header);
-
-            //InnerResponseChecker(checker, header, createResponse);
-
-            //return status;
+            
             return messageId;
         }
 
@@ -1073,8 +1065,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             RequestedOplockLevel_Values requestedOplockLevel_Values = RequestedOplockLevel_Values.OPLOCK_LEVEL_NONE,
             Smb2CreateContextRequest[] createContexts = null,
             AccessMask accessMask = AccessMask.GENERIC_READ | AccessMask.GENERIC_WRITE | AccessMask.DELETE,
-            ShareAccess_Values shareAccess = ShareAccess_Values.FILE_SHARE_READ | ShareAccess_Values.FILE_SHARE_WRITE | ShareAccess_Values.FILE_SHARE_DELETE,
-            ResponseChecker<CREATE_Response> checker = null,
+            ShareAccess_Values shareAccess = ShareAccess_Values.FILE_SHARE_READ | ShareAccess_Values.FILE_SHARE_WRITE | ShareAccess_Values.FILE_SHARE_DELETE,            
             ImpersonationLevel_Values impersonationLevel = ImpersonationLevel_Values.Impersonation,
             CreateDisposition_Values createDisposition = CreateDisposition_Values.FILE_OPEN_IF,
             File_Attributes fileAttributes = File_Attributes.NONE)
@@ -1089,8 +1080,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
                 requestedOplockLevel_Values,
                 createContexts,
                 accessMask,
-                shareAccess,
-                checker,
+                shareAccess,                
                 impersonationLevel,
                 createDisposition,
                 fileAttributes);
@@ -1217,6 +1207,19 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             InnerResponseChecker(checker, header, createResponse);
 
             return status;
+        }
+
+        public TCPResponse CreateResponse1(ulong messageId, ResponseChecker<CREATE_Response> checker = null)
+        {
+            TCPResponse objTCPResponse = new TCPResponse();
+
+            objTCPResponse = client.CreateResponse1(messageId);
+
+            ProduceCredit(objTCPResponse.responseHeader.MessageId, objTCPResponse.responseHeader);
+
+            InnerResponseChecker(checker, objTCPResponse.responseHeader, objTCPResponse.responsePayload);
+
+            return objTCPResponse;
         }
 
         public uint Close(uint treeId, FILEID fileId, ResponseChecker<CLOSE_Response> checker = null, Flags_Values flags = Flags_Values.NONE)

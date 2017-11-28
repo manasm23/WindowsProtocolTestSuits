@@ -12,6 +12,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Protocols.TestTools;
 
 namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
 {
@@ -466,7 +467,11 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                         }
 
                         var single = packet as Smb2SinglePacket;
-                        if (single != null)
+                        //var createPacket = packet as Smb2CreateRequestPacket;
+                        //var responsepacket = packet as Smb2CreateResponsePacket;
+                        //if(createPacket != null) { }
+                        //else if (responsepacket != null) { }
+                        if(single != null )
                         {
                             if (single.Header.Status == Smb2Status.STATUS_PENDING
                                 || packet is Smb2ChangeNotifyResponsePacket
@@ -481,6 +486,8 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                             }
                             else
                             {
+                                //File.WriteAllText(@"C:\Code\a.txt", packet.GetType().ToString());
+                                //Console.WriteLine("test Message");
                                 receivedPackets.SetReceivedPacket(packet);
                             }
                         }
@@ -552,8 +559,8 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
         {
             receivedPackets.PrepareWaitPacket(packet);
 
-            //if (PacketSending != null)
-              //  PacketSending(packet);
+            if (PacketSending != null)
+                PacketSending(packet);
 
             if (packet is SmbNegotiateRequestPacket)
             {
@@ -1321,12 +1328,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             CreateRequest(creditCharge, creditRequest, flags, messageId, sessionId, treeId, path,
                 desiredAccess, shareAccess, createOptions, createDispositions, fileAttributes, impersonationLevel, securityFlag, requestedOplockLevel, createContexts, channelSequence);
 
-
-            //req.re
-
-            //req.Wait();
-
-            //return CreateResponse(messageId, out fileId, out serverCreateContexts, out responseHeader, out responsePayload);
+            //req.Wait();            
         }
 
         public void CreateRequest(
@@ -1431,6 +1433,30 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             responsePayload = response.PayLoad;
 
             return response.Header.Status;
+        }
+
+        public TCPResponse CreateResponse1(ulong messageId)            
+        {
+            TCPResponse objTCPResponse = new TCPResponse();
+            
+            var response = ExpectPacket<Smb2CreateResponsePacket>(messageId);
+
+            objTCPResponse.fileId = response.PayLoad.FileId;
+
+            objTCPResponse.serverCreateContexts = null;
+            if (response.PayLoad.CreateContextsLength > 0)
+            {
+                byte[] serverCreateContextValuesBuffer = response.Buffer.Skip((int)response.PayLoad.CreateContextsOffset - response.BufferOffset).Take((int)response.PayLoad.CreateContextsLength).ToArray();
+
+                objTCPResponse.serverCreateContexts = Smb2Utility.UnmarshalCreateContextResponses(serverCreateContextValuesBuffer);
+            }
+
+            objTCPResponse.responseHeader = response.Header;
+            objTCPResponse.responsePayload = response.PayLoad;
+            objTCPResponse.status = response.Header.Status;
+
+
+            return objTCPResponse;
         }
 
         #endregion
