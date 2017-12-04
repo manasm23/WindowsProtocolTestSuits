@@ -132,8 +132,10 @@
     <Compile Include="Basic\SMB2Basic.cs" />
     <Compile Include="Compound\Compound.cs" />
     <Compile Include="CreateClose\CreateClose.cs" />
+    <Compile Include="CreateClose\WriteToFile.cs" />
     <Compile Include="DurableHandle\SMB2DurableHandleTestBase.cs" />
     <Compile Include="IOCTL\EnumerateSnapshots.cs" />
+    <Compile Include="Multiple\Multiple.cs" />
     <Compile Include="Negotiate\Negotiation.cs" />
     <Compile Include="DurableHandle\DurableHandle.cs" />
     <Compile Include="DurableHandle\DurableHandleV2.cs" />

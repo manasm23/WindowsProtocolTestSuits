@@ -351,6 +351,16 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             }
         }
 
+        public void StartThreads()
+        {
+            client.StartThreads();
+        }
+
+        public void StopThreads()
+        {
+            client.StopThreads();
+        }
+
         public void Disconnect()
         {
             client.Disconnect();
@@ -1374,6 +1384,45 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
 
             return status;
         }
+
+        public uint WriteNew(
+            uint treeId,
+            FILEID fileId,
+            byte[] data,
+            ulong offset = 0,            
+            bool isReplay = false)
+        {
+            //Packet_Header header;
+            //WRITE_Response writeResponse;
+
+            ulong messageId = generateMessageId(sequenceWindow);
+            ushort creditCharge = generateCreditCharge((uint)data.Length);
+
+            // Need to consume credit from sequence window first according to TD
+            ConsumeCredit(messageId, creditCharge);
+
+            uint status = client.WriteNew(
+                creditCharge,
+                generateCreditRequest(sequenceWindow, creditGoal, creditCharge),
+                (testConfig.SendSignedRequest ? Packet_Header_Flags_Values.FLAGS_SIGNED : Packet_Header_Flags_Values.NONE) | (isReplay ? Packet_Header_Flags_Values.FLAGS_REPLAY_OPERATION : Packet_Header_Flags_Values.NONE),
+                messageId,
+                sessionId,
+                treeId,
+                offset,
+                fileId,
+                Channel_Values.CHANNEL_NONE,
+                WRITE_Request_Flags_Values.None,
+                new byte[0],
+                data,                
+                sessionChannelSequence);
+
+            //ProduceCredit(messageId, header);
+
+            //InnerResponseChecker(checker, header, writeResponse);
+
+            return status;
+        }
+
 
         #endregion
 
@@ -2451,6 +2500,68 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             return responsePackets;
         }
 
+        public List<ulong> SendCompoundPacket(List<Smb2SinglePacket> requestPackets)
+        {
+            Smb2CompoundPacket compoundRequest = new Smb2CompoundPacket();
+            compoundRequest.Packets = requestPackets;
+
+            List<ulong> messageIdList = new List<ulong>();
+            for (int i = 0; i < requestPackets.Count; ++i)
+            {
+                Smb2SinglePacket packet = requestPackets[i];
+                // Set MessageId, credit and Flags before sending the compound packet.
+                ulong messageId = generateMessageId(sequenceWindow);
+                ushort creditCharge = generateCreditCharge(1);
+                ConsumeCredit(messageId, creditCharge);
+                packet.Header.MessageId = messageId;
+                packet.Header.CreditCharge = creditCharge;
+                packet.Header.CreditRequestResponse = generateCreditRequest(sequenceWindow, creditGoal, creditCharge);
+                if (testConfig.SendSignedRequest)
+                {
+                    packet.Header.Flags |= Packet_Header_Flags_Values.FLAGS_SIGNED;
+                }
+
+                // If the packet is not the last one in the chain, do 8-byte alignment and calculate value of NextCommand
+                // The last packet in the chain doesn't need to do this.
+                if (i != requestPackets.Count - 1)
+                {
+                    // The message should be padded to an 8-byte boundary.
+                    uint packetLength = (uint)packet.ToBytes().Length;
+                    uint alignedPacketLength = packetLength;
+                    Smb2Utility.Align8(ref alignedPacketLength);
+                    packet.Padding = new byte[alignedPacketLength - packetLength];
+
+                    // This field MUST be set to the offset, in bytes, from the beginning of this SMB2 header to the start of the subsequent 8-byte aligned SMB2 header.
+                    packet.Header.NextCommand = alignedPacketLength;
+                }
+
+                messageIdList.Add(messageId);
+            }
+
+            client.SendPacket(compoundRequest);
+
+            return messageIdList;
+
+            //List<Smb2SinglePacket> responsePackets = client.ExpectPackets(messageIdList);
+            //foreach (var response in responsePackets)
+            //{
+            //    ProduceCredit(response.Header.MessageId, response.Header);
+            //}
+
+            //return responsePackets;
+        }
+
+        public List<Smb2SinglePacket> ReceiveCompoundPacket(List<ulong> messageIdList)
+        {
+            List<Smb2SinglePacket> responsePackets = client.ExpectPackets(messageIdList);
+            foreach (var response in responsePackets)
+            {
+                ProduceCredit(response.Header.MessageId, response.Header);
+            }
+
+            return responsePackets;
+        }
+
         #region event handler
         public void BeforeSendingPacket(Action<Smb2Packet> client_PacketSending)
         {
@@ -2540,7 +2651,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             }
         }
 
-        protected void ProduceCredit(ulong mIdInRequest, Packet_Header header)
+        public void ProduceCredit(ulong mIdInRequest, Packet_Header header)
         {
             // Credits granted this time
             ushort creditGranted = header.CreditRequestResponse;

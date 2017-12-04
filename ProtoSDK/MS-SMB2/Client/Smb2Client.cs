@@ -486,7 +486,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                             }
                             else
                             {
-                                //File.WriteAllText(@"C:\Code\a.txt", packet.GetType().ToString());
+                                //File.AppendAllText(@"C:\Code\a.txt", packet.GetType().ToString());
                                 //Console.WriteLine("test Message");
                                 receivedPackets.SetReceivedPacket(packet);
                             }
@@ -752,6 +752,24 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             notificationThread.Start();
         }
 
+        public void StopThreads()
+        {
+            if(connected)
+            {
+                thread.Abort();
+                notificationThread.Abort();               
+            }
+        }
+
+        public void StartThreads()
+        {
+            if (connected)
+                {
+                    thread.Start();
+                    notificationThread.Start();
+                }            
+        }
+
         /// <summary>
         /// Disconnect with server
         /// </summary>
@@ -770,7 +788,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                 }
                 if (!thread.Join(new TimeSpan(0, 0, 2)))
                 {
-                    thread.Abort();
+                    thread.Abort();                    
                 }
                 thread = null;
                 if (!notificationThread.Join(new TimeSpan(0, 0, 2)))
@@ -1322,13 +1340,8 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
            ushort channelSequence = 0
            )
         {
-            //Task req = Task.Factory.StartNew(() => CreateRequest(creditCharge, creditRequest, flags, messageId, sessionId, treeId, path,
-            //  desiredAccess, shareAccess, createOptions, createDispositions, fileAttributes, impersonationLevel, securityFlag, requestedOplockLevel, createContexts, channelSequence));
-
-            CreateRequest(creditCharge, creditRequest, flags, messageId, sessionId, treeId, path,
+           CreateRequest(creditCharge, creditRequest, flags, messageId, sessionId, treeId, path,
                 desiredAccess, shareAccess, createOptions, createDispositions, fileAttributes, impersonationLevel, securityFlag, requestedOplockLevel, createContexts, channelSequence);
-
-            //req.Wait();            
         }
 
         public void CreateRequest(
@@ -1361,7 +1374,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             request.Header.TreeId = treeId;
             request.Header.SessionId = sessionId;
             request.Header.Status = channelSequence;
-
+            
             request.PayLoad.SecurityFlags = SecurityFlags_Values.NONE;
             request.PayLoad.RequestedOplockLevel = requestedOplockLevel;
             request.PayLoad.ImpersonationLevel = impersonationLevel;
@@ -1631,6 +1644,29 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             return WriteResponse(messageId, out responseHeader, out responsePayload);
         }
 
+        public uint WriteNew(
+            ushort creditCharge,
+            ushort creditRequest,
+            Packet_Header_Flags_Values flags,
+            ulong messageId,
+            ulong sessionId,
+            uint treeId,
+            ulong offset,
+            FILEID fileId,
+            Channel_Values channel,
+            WRITE_Request_Flags_Values writeFlags,
+            byte[] writeChannelInfo,
+            byte[] content,            
+            ushort channelSequence = 0
+            )
+        {
+            WriteRequest(creditCharge, creditRequest, flags, messageId, sessionId, treeId, offset, fileId, channel, writeFlags, writeChannelInfo, content, channelSequence);
+
+            //return WriteResponse(messageId, out responseHeader, out responsePayload);
+
+            return 0;
+        }
+
         public void WriteRequest(
             ushort creditCharge,
             ushort creditRequest,
@@ -1669,7 +1705,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
 
             request.Buffer = writeChannelInfo.Concat(content).ToArray();
 
-            SendPacket(request);
+            SendPacket1(request);
         }
 
         public uint WriteResponse(

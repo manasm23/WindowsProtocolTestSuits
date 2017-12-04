@@ -225,7 +225,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
             createOption = isDeleteFlagSet ? (createOption | CreateOptions_Values.FILE_DELETE_ON_CLOSE) : createOption;
             // The createDisposition is set to FILE_OPEN if the file already existed; else, if it's the first time to create a file, this field should be set to FILE_CREATE
             createDisposition = (fileNameType == FileNameType.ExistedValidFileName) ? CreateDisposition_Values.FILE_OPEN : CreateDisposition_Values.FILE_CREATE;
-            
+
             //fileName = GetFileName(isDirectory, fileNameType);
             //BaseTestSite.Log.Add(LogEntryKind.TestStep, "Client sends CREATE request with create option: {0} and create disposition: {1}", createOption, createDisposition);
             //uint status = client.Create(
@@ -240,7 +240,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
             //    {
             //        CheckCreateResponse(isNonAdmin, createOption, accessMask, header, response, fileNameType);
             //    });
-
+            client.StopThreads();
             List<ulong> messageIdsList = new List<ulong>();
 
             //Task t1 = Task.Factory.StartNew(() =>
@@ -277,6 +277,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
             //client.Close(treeId, fileId);
             //}
 
+            client.StartThreads();
             client.TreeDisconnect(treeId);
             client.LogOff();
             //}

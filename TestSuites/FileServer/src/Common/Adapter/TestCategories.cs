@@ -29,6 +29,8 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
         public const string CBAC = "CBAC";
         public const string KerberosAuthentication = "KerberosAuthentication";
 
+        public const string Multiple = "Multiple";
+
         // SMB2&3 features
         // Note: For one case, only one feature category could be set
         public const string FsctlLmrRequestResiliency = "FsctlLmrRequestResiliency";
