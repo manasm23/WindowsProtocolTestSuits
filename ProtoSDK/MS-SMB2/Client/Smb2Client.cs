@@ -101,7 +101,11 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                 }
             }
 
-            ret = packetReceived[messageId].Peek().WaitEvent.WaitOne(timeout);
+            var packet = packetReceived[messageId].Peek().Packet;
+            //if (!(packet is Smb2ReadResponsePacket))
+            ///{
+                ret = packetReceived[messageId].Peek().WaitEvent.WaitOne(timeout);
+            //}
             lock (packetReceived)
             {
                 waitingPacket = packetReceived[messageId].Dequeue();
@@ -145,8 +149,13 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                 {
                     throw new ArgumentOutOfRangeException("Invalid message id.");
                 }
+
                 packetReceived[messageId].ElementAt<WaitingPacket>(0).Packet = packet;
-                packetReceived[messageId].ElementAt<WaitingPacket>(0).WaitEvent.Set();
+
+                //var readResponsePacket = packet as Smb2ReadResponsePacket;
+
+                //if (!(packet is Smb2ReadResponsePacket))
+                    packetReceived[messageId].ElementAt<WaitingPacket>(0).WaitEvent.Set();
             }
         }
 
@@ -467,11 +476,12 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                         }
 
                         var single = packet as Smb2SinglePacket;
+                        //var readResponsePacket = packet as ReadR
                         //var createPacket = packet as Smb2CreateRequestPacket;
                         //var responsepacket = packet as Smb2CreateResponsePacket;
                         //if(createPacket != null) { }
                         //else if (responsepacket != null) { }
-                        if(single != null )
+                        if (single != null)
                         {
                             if (single.Header.Status == Smb2Status.STATUS_PENDING
                                 || packet is Smb2ChangeNotifyResponsePacket
@@ -517,6 +527,11 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             }
         }
 
+        private void SendPacket<T>(Smb2Packet packet) where T : Smb2Packet, new()
+        {
+            SendPacket(packet);
+        }
+
         private T SendPacketAndExpectResponse<T>(Smb2Packet packet) where T : Smb2Packet, new()
         {
             SendPacket(packet);
@@ -527,6 +542,19 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                 messageId = (packet as Smb2SinglePacket).Header.MessageId;
             }
             return ExpectPacket<T>(messageId);
+        }
+
+        private void SendPacketAndExpectResponse1<T>(Smb2Packet packet) where T : Smb2Packet, new()
+        {
+            SendPacket(packet);
+
+            ulong messageId = 0; // Message id of SmbNegotiateRequestPacket is 0.
+            if (packet is Smb2SinglePacket)
+            {
+                messageId = (packet as Smb2SinglePacket).Header.MessageId;
+            }
+            //return ExpectPacket<T>(messageId);
+            //return packet;
         }
 
         /// <summary>
@@ -650,7 +678,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
         public List<Smb2SinglePacket> ExpectPackets(List<ulong> messageIdList)
         {
             List<Smb2SinglePacket> packets = new List<Smb2SinglePacket>();
-            for (int i = 0; i < messageIdList.Count; )
+            for (int i = 0; i < messageIdList.Count;)
             {
                 Smb2Packet packet = receivedPackets.WaitPacket(messageIdList[i]);
 
@@ -754,20 +782,20 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
 
         public void StopThreads()
         {
-            if(connected)
+            if (connected)
             {
                 thread.Abort();
-                notificationThread.Abort();               
+                notificationThread.Abort();
             }
         }
 
         public void StartThreads()
         {
             if (connected)
-                {
-                    thread.Start();
-                    notificationThread.Start();
-                }            
+            {
+                thread.Start();
+                notificationThread.Start();
+            }
         }
 
         /// <summary>
@@ -788,7 +816,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                 }
                 if (!thread.Join(new TimeSpan(0, 0, 2)))
                 {
-                    thread.Abort();                    
+                    thread.Abort();
                 }
                 thread = null;
                 if (!notificationThread.Join(new TimeSpan(0, 0, 2)))
@@ -1336,12 +1364,12 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
            ImpersonationLevel_Values impersonationLevel,
            SecurityFlags_Values securityFlag,
            RequestedOplockLevel_Values requestedOplockLevel,
-           Smb2CreateContextRequest[] createContexts,           
+           Smb2CreateContextRequest[] createContexts,
            ushort channelSequence = 0
            )
         {
-           CreateRequest(creditCharge, creditRequest, flags, messageId, sessionId, treeId, path,
-                desiredAccess, shareAccess, createOptions, createDispositions, fileAttributes, impersonationLevel, securityFlag, requestedOplockLevel, createContexts, channelSequence);
+            CreateRequest(creditCharge, creditRequest, flags, messageId, sessionId, treeId, path,
+                 desiredAccess, shareAccess, createOptions, createDispositions, fileAttributes, impersonationLevel, securityFlag, requestedOplockLevel, createContexts, channelSequence);
         }
 
         public void CreateRequest(
@@ -1374,7 +1402,8 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             request.Header.TreeId = treeId;
             request.Header.SessionId = sessionId;
             request.Header.Status = channelSequence;
-            
+
+
             request.PayLoad.SecurityFlags = SecurityFlags_Values.NONE;
             request.PayLoad.RequestedOplockLevel = requestedOplockLevel;
             request.PayLoad.ImpersonationLevel = impersonationLevel;
@@ -1448,10 +1477,10 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             return response.Header.Status;
         }
 
-        public TCPResponse CreateResponse1(ulong messageId)            
+        public TCPResponse CreateResponse1(ulong messageId)
         {
             TCPResponse objTCPResponse = new TCPResponse();
-            
+
             var response = ExpectPacket<Smb2CreateResponsePacket>(messageId);
 
             objTCPResponse.fileId = response.PayLoad.FileId;
@@ -1555,6 +1584,50 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
 
         #region Read
 
+        public void ReadRequest(
+            ushort creditCharge,
+            ushort creditRequest,
+            Packet_Header_Flags_Values flags,
+            ulong messageId,
+            ulong sessionId,
+            uint treeId,
+            uint length,
+            ulong offset,
+            FILEID fileId,
+            uint minimumCount,
+            Channel_Values channel,
+            byte[] readChannelInfo,
+            ushort channelSequence = 0
+            )
+        {
+            var request = new Smb2ReadRequestPacket();
+
+            request.Header.CreditCharge = creditCharge;
+            request.Header.Command = Smb2Command.READ;
+            request.Header.CreditRequestResponse = creditRequest;
+            request.Header.Flags = flags;
+            request.Header.MessageId = messageId;
+            request.Header.TreeId = treeId;
+            request.Header.SessionId = sessionId;
+            request.Header.Status = channelSequence;
+
+            request.PayLoad.Length = length;
+            request.PayLoad.Offset = offset;
+            request.PayLoad.FileId = fileId;
+            request.PayLoad.MinimumCount = minimumCount;
+            request.PayLoad.Channel = channel;
+
+            if (readChannelInfo != null && readChannelInfo.Length > 0)
+            {
+                request.PayLoad.ReadChannelInfoOffset = request.BufferOffset;
+                request.PayLoad.ReadChannelInfoLength = (ushort)readChannelInfo.Length;
+                request.Buffer = readChannelInfo.ToArray();
+            }
+
+            SendPacket<Smb2ReadRequestPacket>(request);
+        }
+
+
         public uint Read(
             ushort creditCharge,
             ushort creditRequest,
@@ -1656,7 +1729,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             Channel_Values channel,
             WRITE_Request_Flags_Values writeFlags,
             byte[] writeChannelInfo,
-            byte[] content,            
+            byte[] content,
             ushort channelSequence = 0
             )
         {

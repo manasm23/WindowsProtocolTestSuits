@@ -132,6 +132,7 @@
     <Compile Include="Basic\SMB2Basic.cs" />
     <Compile Include="Compound\Compound.cs" />
     <Compile Include="CreateClose\CreateClose.cs" />
+    <Compile Include="CreateClose\ReadFromFile.cs" />
     <Compile Include="CreateClose\WriteToFile.cs" />
     <Compile Include="DurableHandle\SMB2DurableHandleTestBase.cs" />
     <Compile Include="IOCTL\EnumerateSnapshots.cs" />

@@ -1042,14 +1042,16 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             out Smb2CreateContextResponse[] serverCreateContexts,
             RequestedOplockLevel_Values requestedOplockLevel_Values = RequestedOplockLevel_Values.OPLOCK_LEVEL_NONE,
             Smb2CreateContextRequest[] createContexts = null,
-            AccessMask accessMask = AccessMask.GENERIC_READ | AccessMask.GENERIC_WRITE | AccessMask.DELETE,
+            //AccessMask accessMask =  AccessMask.GENERIC_READ | AccessMask.GENERIC_WRITE | AccessMask.DELETE,
+            AccessMask accessMask = AccessMask.FILE_READ_DATA | AccessMask.FILE_READ_ATTRIBUTES | AccessMask.FILE_READ_EA | AccessMask.READ_CONTROL | AccessMask.SYNCHRONIZE,
             ShareAccess_Values shareAccess = ShareAccess_Values.FILE_SHARE_READ | ShareAccess_Values.FILE_SHARE_WRITE | ShareAccess_Values.FILE_SHARE_DELETE,
             ResponseChecker<CREATE_Response> checker = null,
             ImpersonationLevel_Values impersonationLevel = ImpersonationLevel_Values.Impersonation,
             CreateDisposition_Values createDisposition = CreateDisposition_Values.FILE_OPEN_IF,
             File_Attributes fileAttributes = File_Attributes.NONE)
         {
-            Packet_Header_Flags_Values headerFlag = testConfig.SendSignedRequest ? Packet_Header_Flags_Values.FLAGS_SIGNED : Packet_Header_Flags_Values.NONE;
+            //Packet_Header_Flags_Values headerFlag = testConfig.SendSignedRequest ? Packet_Header_Flags_Values.FLAGS_SIGNED : Packet_Header_Flags_Values.NONE;
+            Packet_Header_Flags_Values headerFlag = Packet_Header_Flags_Values.FLAGS_SIGNED;
 
             return Create(
                 treeId,
@@ -1321,6 +1323,96 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
                 0,
                 Channel_Values.CHANNEL_NONE,
                 0,
+                new byte[0],
+                out data,
+                out header,
+                out readResponse);
+
+            ProduceCredit(messageId, header);
+
+            InnerResponseChecker(checker, header, readResponse);
+
+            return status;
+        }
+
+        public ulong ReadRequest(
+            uint treeId,
+            FILEID fileId,
+            ulong offset,
+            uint lengthToRead,            
+            bool isReplay = false)
+        {            
+            ulong messageId = generateMessageId(sequenceWindow);
+            ushort creditCharge = generateCreditCharge(lengthToRead);
+
+            // Need to consume credit from sequence window first according to TD
+            ConsumeCredit(messageId, creditCharge);
+
+            client.ReadRequest(
+                creditCharge,
+                generateCreditRequest(sequenceWindow, creditGoal, creditCharge),
+                (testConfig.SendSignedRequest ? Packet_Header_Flags_Values.FLAGS_SIGNED : Packet_Header_Flags_Values.NONE) | (isReplay ? Packet_Header_Flags_Values.FLAGS_REPLAY_OPERATION : Packet_Header_Flags_Values.NONE),
+                messageId,
+                sessionId,
+                treeId,
+                lengthToRead,
+                offset,
+                fileId,
+                0,
+                Channel_Values.CHANNEL_NONE,
+                new byte[0]);
+
+            return messageId;
+        }
+
+        public uint ReadResponse(ulong messageId)
+        {
+            ResponseChecker<READ_Response> checker = null;
+
+            var response = client.ExpectPacket<Smb2ReadResponsePacket>(messageId);
+
+            Packet_Header header = response.Header;
+            READ_Response readResponse = response.PayLoad;
+
+            ProduceCredit(messageId, header);
+
+            InnerResponseChecker(checker, header, readResponse);
+
+            return response.Header.Status;
+        }
+
+        public uint Read2(
+            uint treeId,
+            FILEID fileId,
+            ulong offset,
+            uint lengthToRead,
+            uint remainingBytes,
+            out byte[] data,            
+            ResponseChecker<READ_Response> checker = null,            
+            bool isReplay = false)
+        {
+            Packet_Header header;
+            READ_Response readResponse;
+
+            ulong messageId = generateMessageId(sequenceWindow);
+            ushort creditCharge = generateCreditCharge(lengthToRead);
+
+            // Need to consume credit from sequence window first according to TD
+            ConsumeCredit(messageId, creditCharge);
+
+            uint status = client.Read(
+                creditCharge,
+                generateCreditRequest(sequenceWindow, creditGoal, creditCharge),
+                (testConfig.SendSignedRequest ? Packet_Header_Flags_Values.FLAGS_SIGNED : Packet_Header_Flags_Values.NONE) | (isReplay ? Packet_Header_Flags_Values.FLAGS_REPLAY_OPERATION : Packet_Header_Flags_Values.NONE),
+                messageId,
+                sessionId,
+                treeId,
+                lengthToRead,
+                offset,
+                fileId,
+                0,
+                Channel_Values.CHANNEL_NONE,
+                remainingBytes,
                 new byte[0],
                 out data,
                 out header,
@@ -2782,13 +2874,13 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             {
                 checker(header, response);
             }
-            else if (header.Status != Smb2Status.STATUS_SUCCESS)
-            {
-                throw new InvalidOperationException(
-                    string.Format("Unexpected status {0} for {1}",
-                    Smb2Status.GetStatusCode(header.Status),
-                    header.Command));
-            }
+            //else if (header.Status != Smb2Status.STATUS_SUCCESS)
+            //{
+            //    throw new InvalidOperationException(
+            //        string.Format("Unexpected status {0} for {1}",
+            //        Smb2Status.GetStatusCode(header.Status),
+            //        header.Command));
+            //}
         }
 
         private void client_PacketSent(Smb2Packet obj)
