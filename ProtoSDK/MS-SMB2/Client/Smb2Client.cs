@@ -43,6 +43,8 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
         /// </summary>
         private Dictionary<ulong, Queue<WaitingPacket>> packetReceived;
 
+        private Dictionary<ulong, Dictionary<ulong, Queue<WaitingPacket>>> sessionPacketReceived;
+
         /// <summary>
         /// The timeout to wait a packet.
         /// </summary>
@@ -52,6 +54,8 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
         {
             this.timeout = timeout;
             packetReceived = new Dictionary<ulong, Queue<WaitingPacket>>();
+
+            sessionPacketReceived = new Dictionary<ulong, Dictionary<ulong, Queue<WaitingPacket>>>();
         }
 
         /// <summary>
@@ -62,10 +66,24 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
         public void PrepareWaitPacket(Smb2Packet packet)
         {
             ulong messageId = 0;
+            ulong sessionId = 0;
+            //Check for Negiotiate and Session packests, these need to use the old dictionary
             if (packet is Smb2SinglePacket)
             {
                 messageId = (packet as Smb2SinglePacket).Header.MessageId;
-                EnqueueWaitPacket(messageId);
+                sessionId = (packet as Smb2SinglePacket).Header.SessionId;
+
+                //if (packet is Smb2NegotiateResponsePacket || packet is SmbNegotiateRequestPacket || packet is Smb2SessionSetupRequestPacket
+                //            || packet is Smb2SessionSetupResponsePacket)
+                //{
+                //    EnqueueWaitPacket(messageId);
+                //}
+
+                //else
+                //{
+                EnqueueWaitPacket(messageId, sessionId);
+                //}
+
             }
             else if (packet is Smb2CompoundPacket)
             {
@@ -83,35 +101,68 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             }
         }
 
+        private Dictionary<ulong, Queue<WaitingPacket>> GetSessionDictonary(ulong sessionId, ulong messageId)
+        {
+            Dictionary<ulong, Queue<WaitingPacket>> dictPacketReceived;
+
+            if (sessionId == 0)
+            {
+                lock (packetReceived)
+                {
+                    return packetReceived;
+                }
+            }
+
+            else
+            {
+                lock (sessionPacketReceived)
+                {
+                    if (!sessionPacketReceived.ContainsKey(sessionId))
+                    {
+                        throw new ArgumentOutOfRangeException("Invalid sessionId id " + sessionId);
+                    }
+
+                    //
+                    // If SessionId is not present in the Dictionary, then add a SessionId with a associated new Dictionary
+                    //
+                    if (!sessionPacketReceived.TryGetValue(sessionId, out dictPacketReceived))
+                    {
+                        dictPacketReceived = new Dictionary<ulong, Queue<WaitingPacket>>();
+                        sessionPacketReceived.Add(sessionId, dictPacketReceived);
+                    }
+                }
+            }
+            return dictPacketReceived;
+        }
+
         /// <summary>
         /// This method must be called when waiting a response packet from the server.
         /// </summary>
         /// <param name="messageId">The message id of the expected response packet.</param>
         /// <returns></returns>
-        public Smb2Packet WaitPacket(ulong messageId)
+        public Smb2Packet WaitPacket(ulong messageId, ulong sessionId = 0)
         {
             bool ret = false;
             WaitingPacket waitingPacket;
 
-            lock (packetReceived)
+            Dictionary<ulong, Queue<WaitingPacket>> dict_PacketReceived = GetSessionDictonary(sessionId, messageId);
+
+            lock (dict_PacketReceived)
             {
-                if (!packetReceived.ContainsKey(messageId))
+                if (!dict_PacketReceived.ContainsKey(messageId))
                 {
                     throw new ArgumentOutOfRangeException("Invalid message id " + messageId);
                 }
             }
 
-            var packet = packetReceived[messageId].Peek().Packet;
-            //if (!(packet is Smb2ReadResponsePacket))
-            ///{
-                ret = packetReceived[messageId].Peek().WaitEvent.WaitOne(timeout);
-            //}
-            lock (packetReceived)
+            ret = dict_PacketReceived[messageId].Peek().WaitEvent.WaitOne(timeout);
+
+            lock (dict_PacketReceived)
             {
-                waitingPacket = packetReceived[messageId].Dequeue();
-                if (packetReceived[messageId].Count == 0)
+                waitingPacket = dict_PacketReceived[messageId].Dequeue();
+                if (dict_PacketReceived[messageId].Count == 0)
                 {
-                    packetReceived.Remove(messageId);
+                    dict_PacketReceived.Remove(messageId);
                 }
             }
 
@@ -120,8 +171,46 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                 throw new TimeoutException();
             }
 
-            return waitingPacket.Packet;
+            return waitingPacket.Packet;            
         }
+
+        /// <summary>
+        /// This method must be called when waiting a response packet from the server.
+        /// </summary>
+        /// <param name="messageId">The message id of the expected response packet.</param>
+        /// <returns></returns>
+        //public Smb2Packet WaitPacket(ulong messageId)
+        //{
+        //    bool ret = false;
+        //    WaitingPacket waitingPacket;
+
+        //lock (packetReceived)
+        //{
+        //    if (!packetReceived.ContainsKey(messageId))
+        //    {
+        //        throw new ArgumentOutOfRangeException("Invalid message id " + messageId);
+        //    }
+        //}
+
+        ////var packet = packetReceived[messageId].Peek().Packet;
+        //ret = packetReceived[messageId].Peek().WaitEvent.WaitOne(timeout);
+
+        //lock (packetReceived)
+        //{
+        //    waitingPacket = packetReceived[messageId].Dequeue();
+        //    if (packetReceived[messageId].Count == 0)
+        //    {
+        //        packetReceived.Remove(messageId);
+        //    }
+        //}
+
+        //if (!ret)
+        //{
+        //    throw new TimeoutException();
+        //}
+
+        //return waitingPacket.Packet;
+        //}
 
         /// <summary>
         /// This method must be called when an expected packet is received.
@@ -130,34 +219,90 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
         public void SetReceivedPacket(Smb2Packet packet)
         {
             ulong messageId = 0;
+            ulong sessionId = 0;
+
             if (packet is Smb2SinglePacket)
             {
                 messageId = (packet as Smb2SinglePacket).Header.MessageId;
+                sessionId = (packet as Smb2SinglePacket).Header.SessionId;
             }
             else if (packet is Smb2CompoundPacket)
             {
                 messageId = (packet as Smb2CompoundPacket).Packets[0].Header.MessageId;
+                sessionId = (packet as Smb2CompoundPacket).Packets[0].Header.SessionId;
             }
             else
             {
                 // Message id of SmbNegotiateResponsePacket is 0.
             }
 
-            lock (packetReceived)
+
+            Dictionary<ulong, Queue<WaitingPacket>> dictPacketReceived = GetSessionDictonary(sessionId, messageId);
+
+            //lock (sessionPacketReceived)
+            //{
+            //    if (!sessionPacketReceived.ContainsKey(sessionId))
+            //    {
+            //        throw new ArgumentOutOfRangeException("Invalid sessionId id " + sessionId);
+            //    }
+
+            //    else
+            //    {
+            //        dictPacketReceived = sessionPacketReceived[sessionId];
+            //    }
+            //}
+
+            lock (dictPacketReceived)
             {
-                if (!packetReceived.ContainsKey(messageId))
+                if (!dictPacketReceived.ContainsKey(messageId))
                 {
                     throw new ArgumentOutOfRangeException("Invalid message id.");
                 }
 
-                packetReceived[messageId].ElementAt<WaitingPacket>(0).Packet = packet;
+                dictPacketReceived[messageId].ElementAt<WaitingPacket>(0).Packet = packet;
 
-                //var readResponsePacket = packet as Smb2ReadResponsePacket;
-
-                //if (!(packet is Smb2ReadResponsePacket))
-                    packetReceived[messageId].ElementAt<WaitingPacket>(0).WaitEvent.Set();
+                dictPacketReceived[messageId].ElementAt<WaitingPacket>(0).WaitEvent.Set();
             }
         }
+
+        /// <summary>
+        /// This method must be called when an expected packet is received.
+        /// </summary>
+        /// <param name="packet"></param>
+        //public void SetReceivedPacket(Smb2Packet packet)
+        //{
+        //    ulong messageId = 0;
+
+        //    if (packet is Smb2SinglePacket)
+        //    {
+        //        messageId = (packet as Smb2SinglePacket).Header.MessageId;
+        //    }
+        //    else if (packet is Smb2CompoundPacket)
+        //    {
+        //        messageId = (packet as Smb2CompoundPacket).Packets[0].Header.MessageId;
+        //    }
+        //    else
+        //    {
+        //        // Message id of SmbNegotiateResponsePacket is 0.
+        //    }
+
+        //    lock (packetReceived)
+        //    {
+        //        if (!packetReceived.ContainsKey(messageId))
+        //        {
+        //            throw new ArgumentOutOfRangeException("Invalid message id.");
+        //        }
+
+        //        packetReceived[messageId].ElementAt<WaitingPacket>(0).Packet = packet;
+
+        //        //var readResponsePacket = packet as Smb2ReadResponsePacket;
+
+        //        //if (!(packet is Smb2ReadResponsePacket))
+        //        packetReceived[messageId].ElementAt<WaitingPacket>(0).WaitEvent.Set();
+        //    }
+        //}
+
+
 
         /// <summary>
         /// Signal all events to unblock the waiting.
@@ -176,15 +321,49 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             }
         }
 
-        private void EnqueueWaitPacket(ulong messageId)
+        //private void EnqueueWaitPacket(ulong messageId)
+        //{
+        //    lock (packetReceived)
+        //    {
+        //        if (!packetReceived.ContainsKey(messageId))
+        //        {
+        //            packetReceived[messageId] = new Queue<WaitingPacket>();
+        //        }
+        //        packetReceived[messageId].Enqueue(new WaitingPacket());
+        //    }
+        //}
+
+        private void EnqueueWaitPacket(ulong messageId, ulong sessionId = 0)
         {
-            lock (packetReceived)
+            Dictionary<ulong, Queue<WaitingPacket>> dictPacketReceived = GetSessionDictonary(sessionId, messageId);
+
+            lock (dictPacketReceived)
             {
-                if (!packetReceived.ContainsKey(messageId))
+                //Dictionary<ulong, Queue<WaitingPacket>> dictPacketReceived = GetSessionDictonary(sessionId, messageId);
+
+                //Dictionary<ulong, Queue<WaitingPacket>> dictPacketReceived;
+
+                //
+                // If SessionId is not present in the Dictionary, then add a SessionId with a associated new Dictionary
+                //
+                //if (!sessionPacketReceived.TryGetValue(sessionId, out dictPacketReceived))
+                //{
+                //    dictPacketReceived = new Dictionary<ulong, Queue<WaitingPacket>>();
+                //    sessionPacketReceived.Add(sessionId, dictPacketReceived);                                  
+                //}
+
+                Queue<WaitingPacket> qWaitingPacket;
+
+                //
+                //If MessageId is not present in the Dictionary, then add a MessageId with a asociated new Queue
+                //
+                if (!dictPacketReceived.TryGetValue(messageId, out qWaitingPacket))
                 {
-                    packetReceived[messageId] = new Queue<WaitingPacket>();
+                    qWaitingPacket = new Queue<WaitingPacket>();
+                    dictPacketReceived.Add(messageId, qWaitingPacket);
                 }
-                packetReceived[messageId].Enqueue(new WaitingPacket());
+
+                qWaitingPacket.Enqueue(new WaitingPacket());
             }
         }
     }
@@ -496,8 +675,6 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                             }
                             else
                             {
-                                //File.AppendAllText(@"C:\Code\a.txt", packet.GetType().ToString());
-                                //Console.WriteLine("test Message");
                                 receivedPackets.SetReceivedPacket(packet);
                             }
                         }
@@ -623,6 +800,53 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
         }
 
         public virtual T ExpectPacket<T>(ulong messageId) where T : Smb2Packet
+        {
+            Smb2Packet packet = receivedPackets.WaitPacket(messageId);
+
+            // Sometimes the response packet is followed by the disconnect message from server.
+            // "serverDisconnected" could be changed to true by the EventLoop() in another thread
+            // if the disconnect message is very close to the response packet.
+            // In this case, we should handle the response packet first. We should not throw the exception.
+            // On the other hand, if the response is a disconnect message (which means we cannot get a packet from the receive list), 
+            // then we should throw the exception.
+            if (packet == null && serverDisconnected)
+                throw new InvalidOperationException("Underlying connection has been closed.");
+
+            if (packet == null && exceptionWhenReceivingPacket != null)
+                throw exceptionWhenReceivingPacket;
+
+            if (packet is T)
+            {
+                return packet as T;
+            }
+            else if (packet is Smb2SinglePacket)
+            {
+                var singlePacket = packet as Smb2SinglePacket;
+                // We will force the casting if it's an OPLOCK_BREAK error packet
+                if (singlePacket.Error != null && singlePacket.Header.Command == Smb2Command.OPLOCK_BREAK)
+                {
+                    if (typeof(T) == typeof(Smb2LeaseBreakResponsePacket))
+                    {
+                        var ret = new Smb2LeaseBreakResponsePacket();
+                        ret.Header = singlePacket.Header;
+                        ret.Error = singlePacket.Error;
+
+                        return ret as T;
+                    }
+                    else
+                    {
+                        var ret = new Smb2OpLockBreakResponsePacket();
+                        ret.Header = singlePacket.Header;
+                        ret.Error = singlePacket.Error;
+
+                        return ret as T;
+                    }
+                }
+            }
+            throw new InvalidOperationException("Unexpected packet: " + packet.ToString());
+        }
+
+        public virtual T ExpectPacket<T>(ulong messageId, ulong sessionId) where T : Smb2Packet
         {
             Smb2Packet packet = receivedPackets.WaitPacket(messageId);
 

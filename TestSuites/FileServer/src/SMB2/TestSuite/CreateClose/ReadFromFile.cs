@@ -16,8 +16,10 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
         #region Fields
         private string fileName;
         private Smb2FunctionalClient client;
+        private Smb2Client connectObject;
         private FILEID fileId1;
         private const int DEFAULT_WRITE_BUFFER_SIZE_IN_KB = 1048576;
+        protected ulong sessionId;
         #endregion
 
         #region Test Initialize and Cleanup
@@ -40,6 +42,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
         /// </summary>
         private Smb2FunctionalClient InitializeClient(IPAddress ip, out uint treeId)
         {
+            //Smb2FunctionalClient client = new Smb2FunctionalClient(connectObject, TestConfig.Timeout, TestConfig, this.Site, ip);
             Smb2FunctionalClient client = new Smb2FunctionalClient(TestConfig.Timeout, TestConfig, this.Site);
             client.ConnectToServerOverTCP(ip);
             client.Negotiate(
@@ -62,12 +65,13 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
         public void Read_Data_From_File()
         {
             uint treeId;
-            client = InitializeClient(TestConfig.SutIPAddress, out treeId);
+            Smb2FunctionalClient client = InitializeClient(TestConfig.SutIPAddress, out treeId);
+
+            //fileName = "NewFile.pdf";
+            fileName = "NewFile2.pptx";
 
             Smb2CreateContextResponse[] contexts;
-
-            fileName = "TestFile.wrf";
-
+            
             client.Create(
                         treeId,
                         fileName,
@@ -78,31 +82,116 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
 
             byte[] data;
             uint defaultBufferSize = DEFAULT_WRITE_BUFFER_SIZE_IN_KB;
-            ulong ulFileSize = 69903725;
+            ulong ulFileSize = 8407754; //69903725;  //4615306; 
             ulong uiByteRemaining = ulFileSize;
             ulong ulFileOffset = 0;
-           
-            List<ulong> messageIdsList = new List<ulong>();
 
-            while (ulFileOffset < ulFileSize)
+            //Task<ulong> t1 = null;
+            //Task t2 = null;
+
+            do
             {
                 defaultBufferSize = (uiByteRemaining < 1048576) ? (uint)uiByteRemaining : 1048576;
 
+                //client.Read(treeId, fileId1, ulFileOffset, defaultBufferSize, out data);               
+
                 Task<ulong> t1 = Task<ulong>.Factory.StartNew(() => client.ReadRequest(treeId, fileId1, ulFileOffset, defaultBufferSize));
+                //ulong messageId = client.ReadRequest(treeId, fileId1, ulFileOffset, defaultBufferSize);
+
+                t1.Wait();
+
+                ulFileOffset += defaultBufferSize;
+                uiByteRemaining -= defaultBufferSize;                
+
+                //Task t2 = Task.Factory.StartNew(() => client.ReadResponse(t1.Result));
+                client.ReadResponse(t1.Result);
+
+
+                //Task<ulong> t2 = Task<ulong>.Factory.StartNew(() => client.ReadRequest(treeId, fileId1, ulFileOffset, defaultBufferSize));
+                ////ulong messageId = client.ReadRequest(treeId, fileId1, ulFileOffset, defaultBufferSize);
+
+                //t2.Wait();
+
+                //ulFileOffset += defaultBufferSize;
+                //uiByteRemaining -= defaultBufferSize;
+
+                ////Task t2 = Task.Factory.StartNew(() => client.ReadResponse(t1.Result));
+                //client.ReadResponse(t2.Result);
+
+
+                //client.ReadResponse(messageId);
+                //t2.Wait();
+            }
+            while (ulFileOffset < ulFileSize);
+
+            client.Close(treeId, fileId1);
+
+            client.LogOff();
+            
+
+            AccountCredential accountCredential = false ? TestConfig.NonAdminAccountCredential : TestConfig.AccountCredential;
+            client.CreateNewSessionSetup(TestConfig.DefaultSecurityPackage, TestConfig.SutComputerName, accountCredential, false);
+
+            string sharePath = Smb2Utility.GetUncPath(TestConfig.SutComputerName, TestConfig.BasicFileShare);
+            client.TreeConnect(sharePath, out treeId);
+
+            //fileName = "TestFile.wrf";
+            ////fileName = "NewFile.pdf";
+
+            client.Create(
+                        treeId,
+                        fileName,
+                         CreateOptions_Values.FILE_SEQUENTIAL_ONLY | CreateOptions_Values.FILE_NON_DIRECTORY_FILE | CreateOptions_Values.FILE_OPEN_REPARSE_POINT,
+                        out fileId1,
+                        out contexts,
+                        RequestedOplockLevel_Values.OPLOCK_LEVEL_LEASE);
+
+            data = null;
+            //defaultBufferSize = DEFAULT_WRITE_BUFFER_SIZE_IN_KB;
+            //ulFileSize = 4615306; //69903725;
+            uiByteRemaining = ulFileSize;
+            ulFileOffset = 0;
+
+            do
+            {
+                defaultBufferSize = (uiByteRemaining < 1048576) ? (uint)uiByteRemaining : 1048576;
+
+                //client.Read(treeId, fileId1, ulFileOffset, defaultBufferSize, out data);               
+
+                Task<ulong> t1 = Task<ulong>.Factory.StartNew(() => client.ReadRequest(treeId, fileId1, ulFileOffset, defaultBufferSize));
+                //ulong messageId = client.ReadRequest(treeId, fileId1, ulFileOffset, defaultBufferSize);
 
                 t1.Wait();
 
                 ulFileOffset += defaultBufferSize;
                 uiByteRemaining -= defaultBufferSize;
-                
-                Task.Factory.StartNew(() => client.ReadResponse(t1.Result));
-            }            
 
+                //Task t2 = Task.Factory.StartNew(() => client.ReadResponse(t1.Result));
+                client.ReadResponse(t1.Result);
+
+
+                //Task<ulong> t2 = Task<ulong>.Factory.StartNew(() => client.ReadRequest(treeId, fileId1, ulFileOffset, defaultBufferSize));
+                ////ulong messageId = client.ReadRequest(treeId, fileId1, ulFileOffset, defaultBufferSize);
+
+                //t2.Wait();
+
+                //ulFileOffset += defaultBufferSize;
+                //uiByteRemaining -= defaultBufferSize;
+
+                ////Task t2 = Task.Factory.StartNew(() => client.ReadResponse(t1.Result));
+                //client.ReadResponse(t2.Result);
+
+
+                //client.ReadResponse(messageId);
+                //t2.Wait();
+            }
+            while (ulFileOffset < ulFileSize);
+            
             client.Close(treeId, fileId1);
 
             client.LogOff();
 
-            client.Disconnect();
-        }        
+            client.Disconnect();            
+        }
     }
 }

@@ -106,8 +106,10 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             this.testConfig = testConfig;
             client.DisableVerifySignature = this.testConfig.DisableVerifySignature;
 
-            sequenceWindow = new SortedSet<ulong>();
-            sequenceWindow.Add(0);
+            sequenceWindow = new SortedSet<ulong>
+            {
+                0
+            };
 
             // Set to default generators
             generateMessageId = GetDefaultMId;
@@ -125,6 +127,46 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             creditGoal = 1;
         }
 
+
+        public Smb2FunctionalClient(Smb2Client p_client, TimeSpan timeout, TestConfigBase testConfig, ITestSite baseTestSite, IPAddress ip)
+        {
+            if(p_client != null)
+            {
+                client = p_client;
+                return;
+            }
+
+            client = new Smb2Client(timeout);
+            this.testConfig = testConfig;
+            client.DisableVerifySignature = this.testConfig.DisableVerifySignature;
+
+            sequenceWindow = new SortedSet<ulong>
+            {
+                0
+            };
+
+            // Set to default generators
+            generateMessageId = GetDefaultMId;
+            generateCreditCharge = GetDefaultCreditCharge;
+            generateCreditRequest = GetDefaultCreditRequest;
+
+            this.baseTestSite = baseTestSite;
+
+            client.PacketReceived += new Action<Smb2Packet>(client_PacketReceived);
+            client.PacketSending += new Action<Smb2Packet>(client_PacketSent);
+            client.PendingResponseReceived += new Action<Smb2SinglePacket>(client_PendingResponseReceived);
+
+            sessionChannelSequence = 0;
+
+            creditGoal = 1;
+
+            
+
+            this.ConnectToServerOverTCP(ip);
+            this.Negotiate(Smb2Utility.GetDialects(DialectRevision.Smb21), testConfig.IsSMB1NegotiateEnabled);
+
+            p_client = client;
+        }
         #endregion
 
         #region Properties
@@ -646,6 +688,51 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
                 useServerGssToken,
                 checker: checker);
         }
+
+        public uint CreateNewSessionSetup(
+            SecurityPackageType securityPackageType,
+            string serverName,
+            AccountCredential credential,
+            bool useServerGssToken,
+            SESSION_SETUP_Request_SecurityMode_Values securityMode = SESSION_SETUP_Request_SecurityMode_Values.NEGOTIATE_SIGNING_ENABLED,
+            SESSION_SETUP_Request_Capabilities_Values capabilities = SESSION_SETUP_Request_Capabilities_Values.GLOBAL_CAP_DFS,
+            ResponseChecker<SESSION_SETUP_Response> checker = null)
+        {
+            return NewSessionSetup(
+                Packet_Header_Flags_Values.NONE,
+                SESSION_SETUP_Request_Flags.NONE,
+                securityMode,
+                capabilities,
+                0,
+                securityPackageType,
+                serverName,
+                credential,
+                useServerGssToken,
+                checker: checker);
+        }
+
+
+        //public ulong SessionSetup1(
+        //   SecurityPackageType securityPackageType,
+        //   string serverName,
+        //   AccountCredential credential,
+        //   bool useServerGssToken,
+        //   SESSION_SETUP_Request_SecurityMode_Values securityMode = SESSION_SETUP_Request_SecurityMode_Values.NEGOTIATE_SIGNING_ENABLED,
+        //   SESSION_SETUP_Request_Capabilities_Values capabilities = SESSION_SETUP_Request_Capabilities_Values.GLOBAL_CAP_DFS,
+        //   ResponseChecker<SESSION_SETUP_Response> checker = null)
+        //{
+        //    return SessionSetup1(
+        //        Packet_Header_Flags_Values.NONE,
+        //        SESSION_SETUP_Request_Flags.NONE,
+        //        securityMode,
+        //        capabilities,
+        //        0,
+        //        securityPackageType,
+        //        serverName,
+        //        credential,
+        //        useServerGssToken,
+        //        checker: checker);
+        //}
 
         public uint SessionSetup(
             Packet_Header_Flags_Values headerFlags,
@@ -2866,6 +2953,213 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             InnerResponseChecker(checker, header, sessionSetupResponse);
 
             return status;
+        }
+
+        private uint NewSessionSetup(
+            Packet_Header_Flags_Values headerFlags,
+            SESSION_SETUP_Request_Flags sessionSetupFlags,
+            SESSION_SETUP_Request_SecurityMode_Values securityMode,
+            SESSION_SETUP_Request_Capabilities_Values capabilities,
+            ulong previousSessionId,
+            SecurityPackageType securityPackageType,
+            string serverName,
+            AccountCredential credential,
+            bool useServerGssToken,
+            bool allowPartialAuthentication = false,
+            bool isMultipleChannelSupported = true,
+            ResponseChecker<SESSION_SETUP_Response> checker = null)
+        {
+            Packet_Header header;
+            SESSION_SETUP_Response sessionSetupResponse;
+
+            if (sspiClientGss == null || !needContinueAuthenticating)
+            {
+                sspiClientGss =
+                    new SspiClientSecurityContext(
+                        securityPackageType,
+                        credential,
+                        Smb2Utility.GetCifsServicePrincipalName(serverName),
+                        ClientSecurityContextAttribute.None,
+                        SecurityTargetDataRepresentation.SecurityNativeDrep);
+
+                // Server GSS token is used only for Negotiate authentication when enabled
+                if (securityPackageType == SecurityPackageType.Negotiate && useServerGssToken)
+                    sspiClientGss.Initialize(serverGssToken);
+                else
+                    sspiClientGss.Initialize(null);
+            }
+            uint status;
+            ulong messageId;
+            ushort creditCharge;
+
+            //Since you need a new session
+            sessionId = 0;
+
+            do
+            {
+                messageId = generateMessageId(sequenceWindow);
+                creditCharge = generateCreditCharge(1);
+
+                // Need to consume credit from sequence window first according to TD
+                ConsumeCredit(messageId, creditCharge);                
+
+                status = client.SessionSetup(
+                    creditCharge,
+                    generateCreditRequest(sequenceWindow, creditGoal, creditCharge),
+                    headerFlags,
+                    messageId,
+                    sessionId,
+                    sessionSetupFlags,
+                    securityMode,
+                    capabilities,
+                    previousSessionId,
+                    sspiClientGss.Token,
+                    out sessionId,
+                    out serverGssToken,
+                    out header,
+                    out sessionSetupResponse);
+
+                if ((status == Smb2Status.STATUS_MORE_PROCESSING_REQUIRED || status == Smb2Status.STATUS_SUCCESS) &&
+                    serverGssToken != null && serverGssToken.Length > 0)
+                {
+                    sspiClientGss.Initialize(serverGssToken);
+                }
+                if (status == Smb2Status.STATUS_MORE_PROCESSING_REQUIRED)
+                {
+                    needContinueAuthenticating = true;
+                }
+
+                ProduceCredit(messageId, header);
+
+            } while (status == Smb2Status.STATUS_MORE_PROCESSING_REQUIRED && !allowPartialAuthentication);
+
+            if (status == Smb2Status.STATUS_SUCCESS)
+            {
+                sessionKey = sspiClientGss.SessionKey;
+
+                // Enable/Disable signing according to test config.
+                // If server supports signing (testConfig.IsSigningSupported is true), all test cases (except signning related cases) should 
+                // set Packet_Header_Flags_Values.FLAGS_SIGNED in the header flags for requests other than Negotiate and SessionSetup.                             
+                if (sessionSetupFlags == SESSION_SETUP_Request_Flags.SESSION_FLAG_BINDING && isMultipleChannelSupported)
+                {
+                    // For bind session
+                    // Set isBinding = true to regenerate the channel.signingkey after session setup succeeds.
+                    GenerateCryptoKeys(testConfig.SendSignedRequest, false, isBinding: true);
+                }
+                else
+                {
+                    // For new session
+                    GenerateCryptoKeys(testConfig.SendSignedRequest, false);
+                }
+
+                needContinueAuthenticating = false;
+            }
+
+            InnerResponseChecker(checker, header, sessionSetupResponse);
+
+            return status;
+        }
+
+        private ulong SessionSetup1(
+            Packet_Header_Flags_Values headerFlags,
+            SESSION_SETUP_Request_Flags sessionSetupFlags,
+            SESSION_SETUP_Request_SecurityMode_Values securityMode,
+            SESSION_SETUP_Request_Capabilities_Values capabilities,
+            ulong previousSessionId,
+            SecurityPackageType securityPackageType,
+            string serverName,
+            AccountCredential credential,
+            bool useServerGssToken,
+            bool allowPartialAuthentication = false,
+            bool isMultipleChannelSupported = true,
+            ResponseChecker<SESSION_SETUP_Response> checker = null)
+        {
+            Packet_Header header;
+            SESSION_SETUP_Response sessionSetupResponse;
+
+            if (sspiClientGss == null || !needContinueAuthenticating)
+            {
+                sspiClientGss =
+                    new SspiClientSecurityContext(
+                        securityPackageType,
+                        credential,
+                        Smb2Utility.GetCifsServicePrincipalName(serverName),
+                        ClientSecurityContextAttribute.None,
+                        SecurityTargetDataRepresentation.SecurityNativeDrep);
+
+                // Server GSS token is used only for Negotiate authentication when enabled
+                if (securityPackageType == SecurityPackageType.Negotiate && useServerGssToken)
+                    sspiClientGss.Initialize(serverGssToken);
+                else
+                    sspiClientGss.Initialize(null);
+            }
+            uint status;
+            ulong messageId;
+            ushort creditCharge;
+
+            do
+            {
+                messageId = generateMessageId(sequenceWindow);
+                creditCharge = generateCreditCharge(1);
+
+                // Need to consume credit from sequence window first according to TD
+                ConsumeCredit(messageId, creditCharge);
+
+                status = client.SessionSetup(
+                    creditCharge,
+                    generateCreditRequest(sequenceWindow, creditGoal, creditCharge),
+                    headerFlags,
+                    messageId,
+                    sessionId,
+                    sessionSetupFlags,
+                    securityMode,
+                    capabilities,
+                    previousSessionId,
+                    sspiClientGss.Token,
+                    out sessionId,
+                    out serverGssToken,
+                    out header,
+                    out sessionSetupResponse);
+
+                if ((status == Smb2Status.STATUS_MORE_PROCESSING_REQUIRED || status == Smb2Status.STATUS_SUCCESS) &&
+                    serverGssToken != null && serverGssToken.Length > 0)
+                {
+                    sspiClientGss.Initialize(serverGssToken);
+                }
+                if (status == Smb2Status.STATUS_MORE_PROCESSING_REQUIRED)
+                {
+                    needContinueAuthenticating = true;
+                }
+
+                ProduceCredit(messageId, header);
+
+            } while (status == Smb2Status.STATUS_MORE_PROCESSING_REQUIRED && !allowPartialAuthentication);
+
+            if (status == Smb2Status.STATUS_SUCCESS)
+            {
+                sessionKey = sspiClientGss.SessionKey;
+
+                // Enable/Disable signing according to test config.
+                // If server supports signing (testConfig.IsSigningSupported is true), all test cases (except signning related cases) should 
+                // set Packet_Header_Flags_Values.FLAGS_SIGNED in the header flags for requests other than Negotiate and SessionSetup.                             
+                if (sessionSetupFlags == SESSION_SETUP_Request_Flags.SESSION_FLAG_BINDING && isMultipleChannelSupported)
+                {
+                    // For bind session
+                    // Set isBinding = true to regenerate the channel.signingkey after session setup succeeds.
+                    GenerateCryptoKeys(testConfig.SendSignedRequest, false, isBinding: true);
+                }
+                else
+                {
+                    // For new session
+                    GenerateCryptoKeys(testConfig.SendSignedRequest, false);
+                }
+
+                needContinueAuthenticating = false;
+            }
+
+            InnerResponseChecker(checker, header, sessionSetupResponse);
+
+            return sessionId;
         }
 
         private void InnerResponseChecker<T>(ResponseChecker<T> checker, Packet_Header header, T response)
