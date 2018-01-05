@@ -3,7 +3,6 @@ using Microsoft.Protocols.TestTools;
 using Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2;
 using Microsoft.Protocols.TestTools.StackSdk.Security.Sspi;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
@@ -42,7 +41,6 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
         /// </summary>
         private Smb2FunctionalClient InitializeClient(IPAddress ip, out uint treeId)
         {
-            //Smb2FunctionalClient client = new Smb2FunctionalClient(connectObject, TestConfig.Timeout, TestConfig, this.Site, ip);
             Smb2FunctionalClient client = new Smb2FunctionalClient(TestConfig.Timeout, TestConfig, this.Site);
             client.ConnectToServerOverTCP(ip);
             client.Negotiate(
@@ -66,6 +64,16 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
         {
             uint treeId;
             Smb2FunctionalClient client = InitializeClient(TestConfig.SutIPAddress, out treeId);
+
+            //Smb2ClientSession smb2CliSession = new Smb2ClientSession();
+            //smb2CliSession.SessionKey = client.GetSessionKeyForAuthenticatedContext(sessionId);
+
+            //Smb2ClientConnection smb2CliConn = new Smb2ClientConnection();
+            //smb2CliConn.SessionTable = new Dictionary<ulong, Smb2ClientSession>();
+            //smb2CliConn.SessionTable.Add(sessionId, smb2CliSession);
+
+            //context.ConnectionTable = new Dictionary<string, Smb2ClientConnection>();
+            //context.ConnectionTable.Add("Smb2ClientConnection", smb2CliConn);
 
             //fileName = "NewFile.pdf";
             fileName = "NewFile2.pptx";
@@ -126,9 +134,8 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
 
             client.Close(treeId, fileId1);
 
-            client.LogOff();
+            //client.LogOff();
             
-
             AccountCredential accountCredential = false ? TestConfig.NonAdminAccountCredential : TestConfig.AccountCredential;
             client.CreateNewSessionSetup(TestConfig.DefaultSecurityPackage, TestConfig.SutComputerName, accountCredential, false);
 

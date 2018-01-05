@@ -50,6 +50,11 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
         /// </summary>
         private TimeSpan timeout;
 
+        /// <summary>
+        /// Flag to check first Session Request
+        /// </summary>
+        internal bool FirstSessionRequest { get; set; }
+
         public ReceivedPackets(TimeSpan timeout)
         {
             this.timeout = timeout;
@@ -67,23 +72,13 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
         {
             ulong messageId = 0;
             ulong sessionId = 0;
-            //Check for Negiotiate and Session packests, these need to use the old dictionary
+
             if (packet is Smb2SinglePacket)
             {
                 messageId = (packet as Smb2SinglePacket).Header.MessageId;
                 sessionId = (packet as Smb2SinglePacket).Header.SessionId;
 
-                //if (packet is Smb2NegotiateResponsePacket || packet is SmbNegotiateRequestPacket || packet is Smb2SessionSetupRequestPacket
-                //            || packet is Smb2SessionSetupResponsePacket)
-                //{
-                //    EnqueueWaitPacket(messageId);
-                //}
-
-                //else
-                //{
                 EnqueueWaitPacket(messageId, sessionId);
-                //}
-
             }
             else if (packet is Smb2CompoundPacket)
             {
@@ -101,11 +96,26 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             }
         }
 
+        /// <summary>
+        /// This method decides which dictionary object is to be used.
+        /// packetReceived or sessionPacketReceived
+        /// </summary>
+        /// <param name="sessionId"></param>
+        /// <param name="messageId"></param>
+        /// <returns></returns>
         private Dictionary<ulong, Queue<WaitingPacket>> GetSessionDictonary(ulong sessionId, ulong messageId)
         {
             Dictionary<ulong, Queue<WaitingPacket>> dictPacketReceived;
 
-            if (sessionId == 0)
+            //if (FirstSessionRequest)
+            //{
+            //    lock (packetReceived)
+            //    {
+            //        return packetReceived;
+            //    }
+            //}
+
+            if (FirstSessionRequest || sessionId == 0)
             {
                 lock (packetReceived)
                 {
@@ -116,12 +126,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             else
             {
                 lock (sessionPacketReceived)
-                {
-                    if (!sessionPacketReceived.ContainsKey(sessionId))
-                    {
-                        throw new ArgumentOutOfRangeException("Invalid sessionId id " + sessionId);
-                    }
-
+                {                   
                     //
                     // If SessionId is not present in the Dictionary, then add a SessionId with a associated new Dictionary
                     //
@@ -171,7 +176,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                 throw new TimeoutException();
             }
 
-            return waitingPacket.Packet;            
+            return waitingPacket.Packet;
         }
 
         /// <summary>
@@ -236,21 +241,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
                 // Message id of SmbNegotiateResponsePacket is 0.
             }
 
-
             Dictionary<ulong, Queue<WaitingPacket>> dictPacketReceived = GetSessionDictonary(sessionId, messageId);
-
-            //lock (sessionPacketReceived)
-            //{
-            //    if (!sessionPacketReceived.ContainsKey(sessionId))
-            //    {
-            //        throw new ArgumentOutOfRangeException("Invalid sessionId id " + sessionId);
-            //    }
-
-            //    else
-            //    {
-            //        dictPacketReceived = sessionPacketReceived[sessionId];
-            //    }
-            //}
 
             lock (dictPacketReceived)
             {
@@ -303,7 +294,6 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
         //}
 
 
-
         /// <summary>
         /// Signal all events to unblock the waiting.
         /// </summary>
@@ -339,19 +329,6 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
 
             lock (dictPacketReceived)
             {
-                //Dictionary<ulong, Queue<WaitingPacket>> dictPacketReceived = GetSessionDictonary(sessionId, messageId);
-
-                //Dictionary<ulong, Queue<WaitingPacket>> dictPacketReceived;
-
-                //
-                // If SessionId is not present in the Dictionary, then add a SessionId with a associated new Dictionary
-                //
-                //if (!sessionPacketReceived.TryGetValue(sessionId, out dictPacketReceived))
-                //{
-                //    dictPacketReceived = new Dictionary<ulong, Queue<WaitingPacket>>();
-                //    sessionPacketReceived.Add(sessionId, dictPacketReceived);                                  
-                //}
-
                 Queue<WaitingPacket> qWaitingPacket;
 
                 //
@@ -412,6 +389,14 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
 
         // Disable signature verification by default.
         private bool disableVerifySignature = true;
+
+        public bool bFirstSessionRequest
+        {
+            get { return receivedPackets.FirstSessionRequest; }
+            set { receivedPackets.FirstSessionRequest = value; }
+        }
+
+
 
         #endregion
 
@@ -714,11 +699,13 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             SendPacket(packet);
 
             ulong messageId = 0; // Message id of SmbNegotiateRequestPacket is 0.
+            ulong sessionId = 0;
             if (packet is Smb2SinglePacket)
             {
                 messageId = (packet as Smb2SinglePacket).Header.MessageId;
+                sessionId = (packet as Smb2SinglePacket).Header.SessionId;
             }
-            return ExpectPacket<T>(messageId);
+            return ExpectPacket<T>(messageId, sessionId);
         }
 
         private void SendPacketAndExpectResponse1<T>(Smb2Packet packet) where T : Smb2Packet, new()
@@ -848,7 +835,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
 
         public virtual T ExpectPacket<T>(ulong messageId, ulong sessionId) where T : Smb2Packet
         {
-            Smb2Packet packet = receivedPackets.WaitPacket(messageId);
+            Smb2Packet packet = receivedPackets.WaitPacket(messageId, sessionId);
 
             // Sometimes the response packet is followed by the disconnect message from server.
             // "serverDisconnected" could be changed to true by the EventLoop() in another thread
@@ -1569,7 +1556,7 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             CreateRequest(creditCharge, creditRequest, flags, messageId, sessionId, treeId, path,
                 desiredAccess, shareAccess, createOptions, createDispositions, fileAttributes, impersonationLevel, securityFlag, requestedOplockLevel, createContexts, channelSequence);
 
-            return CreateResponse(messageId, out fileId, out serverCreateContexts, out responseHeader, out responsePayload);
+            return CreateResponse(messageId, sessionId, out fileId, out serverCreateContexts, out responseHeader, out responsePayload);
         }
 
         public void Create1(
@@ -1626,7 +1613,6 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
             request.Header.TreeId = treeId;
             request.Header.SessionId = sessionId;
             request.Header.Status = channelSequence;
-
 
             request.PayLoad.SecurityFlags = SecurityFlags_Values.NONE;
             request.PayLoad.RequestedOplockLevel = requestedOplockLevel;
@@ -1700,6 +1686,35 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
 
             return response.Header.Status;
         }
+
+        public uint CreateResponse(
+            ulong messageId,
+            ulong sessionId,
+            out FILEID fileId,
+            out Smb2CreateContextResponse[] serverCreateContexts,
+            out Packet_Header responseHeader,
+            out CREATE_Response responsePayload
+            )
+        {
+            var response = ExpectPacket<Smb2CreateResponsePacket>(messageId, sessionId);
+
+            fileId = response.PayLoad.FileId;
+
+            serverCreateContexts = null;
+            if (response.PayLoad.CreateContextsLength > 0)
+            {
+                byte[] serverCreateContextValuesBuffer = response.Buffer.Skip((int)response.PayLoad.CreateContextsOffset - response.BufferOffset).Take((int)response.PayLoad.CreateContextsLength).ToArray();
+
+                serverCreateContexts = Smb2Utility.UnmarshalCreateContextResponses(serverCreateContextValuesBuffer);
+            }
+
+            responseHeader = response.Header;
+            responsePayload = response.PayLoad;
+
+            return response.Header.Status;
+        }
+
+
 
         public TCPResponse CreateResponse1(ulong messageId)
         {

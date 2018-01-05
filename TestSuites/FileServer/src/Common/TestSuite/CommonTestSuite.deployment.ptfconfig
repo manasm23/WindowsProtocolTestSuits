@@ -33,7 +33,7 @@
 
     <Group name="Common">
 
-      <Property name="Timeout" value="6">
+      <Property name="Timeout" value="600">
         <Description>
           Timeout in seconds for SMB2 connection over transport
         </Description>
@@ -58,20 +58,20 @@
         </Description>
       </Property>
 
-      <Property name="SutComputerName" value="MMARATKA-0NTN8">
+      <Property name="SutComputerName" value="stfs-017c.eng.storvisor.com">
         <Description>
           Computer name of system under test (SUT)
           If SUT does not have a computer name, set the value to SUT's IP address
         </Description>
       </Property>
 
-      <Property name="SutIPAddress" value="10.24.76.73" >
+      <Property name="SutIPAddress" value="10.64.17.36" >
         <Description>
           IP address of SUT to establish connections
         </Description>
       </Property>
 
-      <Property name="DomainName" value="partnet.cisco.com" >
+      <Property name="DomainName" value="hv-ad10" >
         <Description>
           Domain name where the SUT locates
           If SUT is in WORKGROUP, set it to the value of SutComputerName
@@ -79,7 +79,7 @@
         </Description>
       </Property>
 
-      <Property name="AdminUserName" value="mmaratka">
+      <Property name="AdminUserName" value="Administrator">
         <Description>
           Administrator user account name of the SUT
         </Description>
@@ -97,14 +97,14 @@
         </Description>
       </Property>
 
-      <Property name="PasswordForAllUsers" value="Wreq5yI8!">
+      <Property name="PasswordForAllUsers" value="Cisco123">
         <Description>
           Password for all the users listed as above: AdminUserName, NonAdminUserName, GuestUserName.
           (To simplify the config, the 3 accounts use the same password.)
         </Description>
       </Property>
 
-      <Property name="BasicFileShare" value="Share">
+      <Property name="BasicFileShare" value="SMBShare">
         <Description>
           Name for file share without encryption enabled
         </Description>
