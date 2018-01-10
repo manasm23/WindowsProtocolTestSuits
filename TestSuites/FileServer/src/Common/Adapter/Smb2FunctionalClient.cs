@@ -54,6 +54,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
         /// </summary>
         public const uint DefaultMaxOutputResponse = 64 * 1024;
         #endregion
+
         #region Field
 
         protected Smb2Client client;
@@ -64,6 +65,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
         protected SortedSet<ulong> sequenceWindow;
         protected ITestSite baseTestSite;
         protected TestConfigBase testConfig;
+        protected Smb2ClientConnection smb2CliConn;
 
         protected ushort sessionChannelSequence;
 
@@ -93,6 +95,8 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
         /// Max message Id ever produced based on granted credits regardless it's used or not.
         /// </summary>
         protected ulong maxMidEverProduced;
+
+        protected Dictionary<ulong, Smb2ClientSession> dicSessionCollection;
 
         #endregion
 
@@ -125,12 +129,17 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             sessionChannelSequence = 0;
 
             creditGoal = 1;
+
+            dicSessionCollection = new Dictionary<ulong, Smb2ClientSession>();
+
+            smb2CliConn = new Smb2ClientConnection();
+            smb2CliConn.SessionTable = dicSessionCollection;
         }
 
 
         public Smb2FunctionalClient(Smb2Client p_client, TimeSpan timeout, TestConfigBase testConfig, ITestSite baseTestSite, IPAddress ip)
         {
-            if(p_client != null)
+            if (p_client != null)
             {
                 client = p_client;
                 return;
@@ -160,7 +169,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
 
             creditGoal = 1;
 
-            
+
 
             this.ConnectToServerOverTCP(ip);
             this.Negotiate(Smb2Utility.GetDialects(DialectRevision.Smb21), testConfig.IsSMB1NegotiateEnabled);
@@ -459,6 +468,11 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             client.SetTreeEncryption(sessionId, treeId, enableEncryption);
         }
 
+        public byte[] GetSessionKey(ulong sessionId)
+        {
+            return client.GetSessionKeyForAuthenticatedContext(sessionId);
+        }
+
         #endregion
 
         #region Message Requests
@@ -585,8 +599,8 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             if (Array.IndexOf(dialects, DialectRevision.Smb311) >= 0)
             {
                 preauthHashAlgs = new PreauthIntegrityHashID[] { PreauthIntegrityHashID.SHA_512 };
-                encryptionAlgs = new EncryptionAlgorithm[] { 
-                EncryptionAlgorithm.ENCRYPTION_AES128_GCM, 
+                encryptionAlgs = new EncryptionAlgorithm[] {
+                EncryptionAlgorithm.ENCRYPTION_AES128_GCM,
                 EncryptionAlgorithm.ENCRYPTION_AES128_CCM };
             }
 
@@ -689,28 +703,28 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
                 checker: checker);
         }
 
-        public uint CreateNewSessionSetup(
-            SecurityPackageType securityPackageType,
-            string serverName,
-            AccountCredential credential,
-            bool useServerGssToken,
-            SESSION_SETUP_Request_SecurityMode_Values securityMode = SESSION_SETUP_Request_SecurityMode_Values.NEGOTIATE_SIGNING_ENABLED,
-            SESSION_SETUP_Request_Capabilities_Values capabilities = SESSION_SETUP_Request_Capabilities_Values.GLOBAL_CAP_DFS,
-            ResponseChecker<SESSION_SETUP_Response> checker = null)
-        {
-            return NewSessionSetup(
-                Packet_Header_Flags_Values.NONE,
-                SESSION_SETUP_Request_Flags.NONE,
-                securityMode,
-                capabilities,
-                0,
-                securityPackageType,
-                serverName,
-                credential,
-                useServerGssToken,
-                checker: checker);
-        }
-        
+        //public uint CreateNewSessionSetup(
+        //    SecurityPackageType securityPackageType,
+        //    string serverName,
+        //    AccountCredential credential,
+        //    bool useServerGssToken,
+        //    SESSION_SETUP_Request_SecurityMode_Values securityMode = SESSION_SETUP_Request_SecurityMode_Values.NEGOTIATE_SIGNING_ENABLED,
+        //    SESSION_SETUP_Request_Capabilities_Values capabilities = SESSION_SETUP_Request_Capabilities_Values.GLOBAL_CAP_DFS,
+        //    ResponseChecker<SESSION_SETUP_Response> checker = null)
+        //{
+        //    return NewSessionSetup(
+        //        Packet_Header_Flags_Values.NONE,
+        //        SESSION_SETUP_Request_Flags.NONE,
+        //        securityMode,
+        //        capabilities,
+        //        0,
+        //        securityPackageType,
+        //        serverName,
+        //        credential,
+        //        useServerGssToken,
+        //        checker: checker);
+        //}
+
         public uint SessionSetup(
             Packet_Header_Flags_Values headerFlags,
             SecurityPackageType securityPackageType,
@@ -844,6 +858,37 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
                 checker);
         }
 
+        public void LogOffSession(ResponseChecker<LOGOFF_Response> checker = null)
+        {
+            Packet_Header header;
+            LOGOFF_Response logoffResponse;
+
+            ulong messageId = generateMessageId(sequenceWindow);
+            ushort creditCharge = generateCreditCharge(1);
+
+            // Need to consume credit from sequence window first according to TD
+            ConsumeCredit(messageId, creditCharge);
+
+            if (dicSessionCollection.Count != 0)
+            {
+                foreach (ulong key in dicSessionCollection.Keys)
+                {
+                    client.LogOff(
+                    creditCharge,
+                    generateCreditRequest(sequenceWindow, creditGoal, creditCharge),
+                    testConfig.SendSignedRequest ? Packet_Header_Flags_Values.FLAGS_SIGNED : Packet_Header_Flags_Values.NONE,
+                    messageId,
+                    key,
+                    out header,
+                    out logoffResponse);
+
+                    ProduceCredit(messageId, header);
+
+                    InnerResponseChecker(checker, header, logoffResponse);
+                }
+            }            
+        }
+
         public uint LogOff(ResponseChecker<LOGOFF_Response> checker = null)
         {
             Packet_Header header;
@@ -870,6 +915,18 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
 
             return status;
         }
+
+        public Dictionary<ulong, Smb2ClientSession> GetSessionTable()
+        {
+            Smb2ClientSession smb2CliSession = new Smb2ClientSession();
+            smb2CliSession.SessionKey = client.GetSessionKeyForAuthenticatedContext(sessionId);
+
+            Smb2ClientConnection smb2CliConn = new Smb2ClientConnection();
+            smb2CliConn.SessionTable.Add(sessionId, smb2CliSession);
+
+            return smb2CliConn.SessionTable;
+        }
+
 
         #endregion
 
@@ -1044,11 +1101,11 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             uint treeId,
             string fileName,
             CreateOptions_Values createOptions,
-            Packet_Header_Flags_Values headerFlag,            
+            Packet_Header_Flags_Values headerFlag,
             RequestedOplockLevel_Values requestedOplockLevel_Values = RequestedOplockLevel_Values.OPLOCK_LEVEL_NONE,
             Smb2CreateContextRequest[] createContexts = null,
             AccessMask accessMask = AccessMask.GENERIC_READ | AccessMask.GENERIC_WRITE | AccessMask.DELETE,
-            ShareAccess_Values shareAccess = ShareAccess_Values.FILE_SHARE_READ | ShareAccess_Values.FILE_SHARE_WRITE | ShareAccess_Values.FILE_SHARE_DELETE,            
+            ShareAccess_Values shareAccess = ShareAccess_Values.FILE_SHARE_READ | ShareAccess_Values.FILE_SHARE_WRITE | ShareAccess_Values.FILE_SHARE_DELETE,
             ImpersonationLevel_Values impersonationLevel = ImpersonationLevel_Values.Impersonation,
             CreateDisposition_Values createDisposition = CreateDisposition_Values.FILE_OPEN_IF,
             File_Attributes fileAttributes = File_Attributes.NONE)
@@ -1075,9 +1132,9 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
                 impersonationLevel,
                 SecurityFlags_Values.NONE,
                 requestedOplockLevel_Values,
-                createContexts,                
+                createContexts,
                 sessionChannelSequence);
-            
+
             return messageId;
         }
 
@@ -1141,7 +1198,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             RequestedOplockLevel_Values requestedOplockLevel_Values = RequestedOplockLevel_Values.OPLOCK_LEVEL_NONE,
             Smb2CreateContextRequest[] createContexts = null,
             AccessMask accessMask = AccessMask.GENERIC_READ | AccessMask.GENERIC_WRITE | AccessMask.DELETE,
-            ShareAccess_Values shareAccess = ShareAccess_Values.FILE_SHARE_READ | ShareAccess_Values.FILE_SHARE_WRITE | ShareAccess_Values.FILE_SHARE_DELETE,            
+            ShareAccess_Values shareAccess = ShareAccess_Values.FILE_SHARE_READ | ShareAccess_Values.FILE_SHARE_WRITE | ShareAccess_Values.FILE_SHARE_DELETE,
             ImpersonationLevel_Values impersonationLevel = ImpersonationLevel_Values.Impersonation,
             CreateDisposition_Values createDisposition = CreateDisposition_Values.FILE_OPEN_IF,
             File_Attributes fileAttributes = File_Attributes.NONE)
@@ -1156,7 +1213,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
                 requestedOplockLevel_Values,
                 createContexts,
                 accessMask,
-                shareAccess,                
+                shareAccess,
                 impersonationLevel,
                 createDisposition,
                 fileAttributes);
@@ -1315,7 +1372,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
         {
             TCPResponse objTCPResponse = new TCPResponse();
 
-            objTCPResponse = client.CreateResponse1(messageId);
+            objTCPResponse = client.CreateResponse1(messageId, sessionId);
 
             ProduceCredit(objTCPResponse.responseHeader.MessageId, objTCPResponse.responseHeader);
 
@@ -1429,9 +1486,9 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             uint treeId,
             FILEID fileId,
             ulong offset,
-            uint lengthToRead,            
+            uint lengthToRead,
             bool isReplay = false)
-        {            
+        {
             ulong messageId = generateMessageId(sequenceWindow);
             ushort creditCharge = generateCreditCharge(lengthToRead);
 
@@ -1477,8 +1534,8 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             ulong offset,
             uint lengthToRead,
             uint remainingBytes,
-            out byte[] data,            
-            ResponseChecker<READ_Response> checker = null,            
+            out byte[] data,
+            ResponseChecker<READ_Response> checker = null,
             bool isReplay = false)
         {
             Packet_Header header;
@@ -1571,7 +1628,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             uint treeId,
             FILEID fileId,
             byte[] data,
-            ulong offset = 0,            
+            ulong offset = 0,
             bool isReplay = false)
         {
             //Packet_Header header;
@@ -1595,7 +1652,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
                 Channel_Values.CHANNEL_NONE,
                 WRITE_Request_Flags_Values.None,
                 new byte[0],
-                data,                
+                data,
                 sessionChannelSequence);
 
             //ProduceCredit(messageId, header);
@@ -2893,117 +2950,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             ulong messageId;
             ushort creditCharge;
             client.bFirstSessionRequest = true;
-            
-            do
-            {
-                messageId = generateMessageId(sequenceWindow);
-                creditCharge = generateCreditCharge(1);
 
-                // Need to consume credit from sequence window first according to TD
-                ConsumeCredit(messageId, creditCharge);
-                
-                status = client.SessionSetup(
-                    creditCharge,
-                    generateCreditRequest(sequenceWindow, creditGoal, creditCharge),
-                    headerFlags,
-                    messageId,
-                    sessionId,
-                    sessionSetupFlags,
-                    securityMode,
-                    capabilities,
-                    previousSessionId,
-                    sspiClientGss.Token,
-                    out sessionId,
-                    out serverGssToken,
-                    out header,
-                    out sessionSetupResponse);
-
-                if ((status == Smb2Status.STATUS_MORE_PROCESSING_REQUIRED || status == Smb2Status.STATUS_SUCCESS) &&
-                    serverGssToken != null && serverGssToken.Length > 0)
-                {
-                    sspiClientGss.Initialize(serverGssToken);
-                }
-                if (status == Smb2Status.STATUS_MORE_PROCESSING_REQUIRED)
-                {
-                    needContinueAuthenticating = true;
-                }
-
-                ProduceCredit(messageId, header);
-
-                if(sessionId != 0)
-                {
-                    client.bFirstSessionRequest = false;
-                }
-
-            } while (status == Smb2Status.STATUS_MORE_PROCESSING_REQUIRED && !allowPartialAuthentication);
-
-            if (status == Smb2Status.STATUS_SUCCESS)
-            {
-                sessionKey = sspiClientGss.SessionKey;
-
-                // Enable/Disable signing according to test config.
-                // If server supports signing (testConfig.IsSigningSupported is true), all test cases (except signning related cases) should 
-                // set Packet_Header_Flags_Values.FLAGS_SIGNED in the header flags for requests other than Negotiate and SessionSetup.                             
-                if (sessionSetupFlags == SESSION_SETUP_Request_Flags.SESSION_FLAG_BINDING && isMultipleChannelSupported)
-                {
-                    // For bind session
-                    // Set isBinding = true to regenerate the channel.signingkey after session setup succeeds.
-                    GenerateCryptoKeys(testConfig.SendSignedRequest, false, isBinding: true);
-                }
-                else
-                {
-                    // For new session
-                    GenerateCryptoKeys(testConfig.SendSignedRequest, false);
-                }
-
-                needContinueAuthenticating = false;
-            }
-
-            InnerResponseChecker(checker, header, sessionSetupResponse);
-
-            return status;
-        }
-
-        private uint NewSessionSetup(
-            Packet_Header_Flags_Values headerFlags,
-            SESSION_SETUP_Request_Flags sessionSetupFlags,
-            SESSION_SETUP_Request_SecurityMode_Values securityMode,
-            SESSION_SETUP_Request_Capabilities_Values capabilities,
-            ulong previousSessionId,
-            SecurityPackageType securityPackageType,
-            string serverName,
-            AccountCredential credential,
-            bool useServerGssToken,
-            bool allowPartialAuthentication = false,
-            bool isMultipleChannelSupported = true,
-            ResponseChecker<SESSION_SETUP_Response> checker = null)
-        {
-            Packet_Header header;
-            SESSION_SETUP_Response sessionSetupResponse;
-
-            if (sspiClientGss == null || !needContinueAuthenticating)
-            {
-                sspiClientGss =
-                    new SspiClientSecurityContext(
-                        securityPackageType,
-                        credential,
-                        Smb2Utility.GetCifsServicePrincipalName(serverName),
-                        ClientSecurityContextAttribute.None,
-                        SecurityTargetDataRepresentation.SecurityNativeDrep);
-
-                // Server GSS token is used only for Negotiate authentication when enabled
-                if (securityPackageType == SecurityPackageType.Negotiate && useServerGssToken)
-                    sspiClientGss.Initialize(serverGssToken);
-                else
-                    sspiClientGss.Initialize(null);
-            }
-            uint status;
-            ulong messageId;
-            ushort creditCharge;
-
-            client.bFirstSessionRequest = true;
-            
-            //Since you need a new session
             sessionId = 0;
 
             do
@@ -3012,7 +2959,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
                 creditCharge = generateCreditCharge(1);
 
                 // Need to consume credit from sequence window first according to TD
-                ConsumeCredit(messageId, creditCharge);                
+                ConsumeCredit(messageId, creditCharge);
 
                 status = client.SessionSetup(
                     creditCharge,
@@ -3069,6 +3016,11 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
                 }
 
                 needContinueAuthenticating = false;
+
+                Smb2ClientSession smb2CliSession = new Smb2ClientSession();
+                smb2CliSession.SessionKey = client.GetSessionKeyForAuthenticatedContext(sessionId);
+
+                smb2CliConn.SessionTable.Add(sessionId, smb2CliSession);
             }
 
             InnerResponseChecker(checker, header, sessionSetupResponse);
@@ -3076,7 +3028,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             return status;
         }
 
-        //private ulong SessionSetup1(
+        //private uint NewSessionSetup(
         //    Packet_Header_Flags_Values headerFlags,
         //    SESSION_SETUP_Request_Flags sessionSetupFlags,
         //    SESSION_SETUP_Request_SecurityMode_Values securityMode,
@@ -3113,13 +3065,18 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
         //    ulong messageId;
         //    ushort creditCharge;
 
+        //    client.bFirstSessionRequest = true;
+
+        //    //Since you need a new session
+        //    sessionId = 0;
+
         //    do
         //    {
         //        messageId = generateMessageId(sequenceWindow);
         //        creditCharge = generateCreditCharge(1);
 
         //        // Need to consume credit from sequence window first according to TD
-        //        ConsumeCredit(messageId, creditCharge);
+        //        ConsumeCredit(messageId, creditCharge);                
 
         //        status = client.SessionSetup(
         //            creditCharge,
@@ -3149,6 +3106,11 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
 
         //        ProduceCredit(messageId, header);
 
+        //        if (sessionId != 0)
+        //        {
+        //            client.bFirstSessionRequest = false;
+        //        }
+
         //    } while (status == Smb2Status.STATUS_MORE_PROCESSING_REQUIRED && !allowPartialAuthentication);
 
         //    if (status == Smb2Status.STATUS_SUCCESS)
@@ -3175,8 +3137,9 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
 
         //    InnerResponseChecker(checker, header, sessionSetupResponse);
 
-        //    return sessionId;
+        //    return status;
         //}
+
 
         private void InnerResponseChecker<T>(ResponseChecker<T> checker, Packet_Header header, T response)
         {

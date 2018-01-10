@@ -3,7 +3,6 @@ using Microsoft.Protocols.TestTools;
 using Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2;
 using Microsoft.Protocols.TestTools.StackSdk.Security.Sspi;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
 
@@ -14,8 +13,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
     {
         #region Fields
         private string fileName;
-        private Smb2FunctionalClient client;
-        private Smb2Client connectObject;
+        private Smb2FunctionalClient client;        
         private FILEID fileId1;
         private const int DEFAULT_WRITE_BUFFER_SIZE_IN_KB = 1048576;
         protected ulong sessionId;
@@ -41,7 +39,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
         /// </summary>
         private Smb2FunctionalClient InitializeClient(IPAddress ip, out uint treeId)
         {
-            Smb2FunctionalClient client = new Smb2FunctionalClient(TestConfig.Timeout, TestConfig, this.Site);
+            client = new Smb2FunctionalClient(TestConfig.Timeout, TestConfig, this.Site);
             client.ConnectToServerOverTCP(ip);
             client.Negotiate(
                 Smb2Utility.GetDialects(DialectRevision.Smb21),
@@ -63,20 +61,10 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
         public void Read_Data_From_File()
         {
             uint treeId;
-            Smb2FunctionalClient client = InitializeClient(TestConfig.SutIPAddress, out treeId);
-
-            //Smb2ClientSession smb2CliSession = new Smb2ClientSession();
-            //smb2CliSession.SessionKey = client.GetSessionKeyForAuthenticatedContext(sessionId);
-
-            //Smb2ClientConnection smb2CliConn = new Smb2ClientConnection();
-            //smb2CliConn.SessionTable = new Dictionary<ulong, Smb2ClientSession>();
-            //smb2CliConn.SessionTable.Add(sessionId, smb2CliSession);
-
-            //context.ConnectionTable = new Dictionary<string, Smb2ClientConnection>();
-            //context.ConnectionTable.Add("Smb2ClientConnection", smb2CliConn);
-
-            //fileName = "NewFile.pdf";
-            fileName = "NewFile2.pptx";
+            client = InitializeClient(TestConfig.SutIPAddress, out treeId);
+            
+            fileName = "NewFile.pdf";
+            //fileName = "NewFile3.pdf";
 
             Smb2CreateContextResponse[] contexts;
             
@@ -88,11 +76,11 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
                         out contexts,
                         RequestedOplockLevel_Values.OPLOCK_LEVEL_LEASE);
 
-            byte[] data;
+            //byte[] data;
             uint defaultBufferSize = DEFAULT_WRITE_BUFFER_SIZE_IN_KB;
-            ulong ulFileSize = 8407754; //69903725;  //4615306; 
+            ulong ulFileSize = 4615306;//8407754; //69903725;  //4615306; //26795325
             ulong uiByteRemaining = ulFileSize;
-            ulong ulFileOffset = 0;
+            ulong ulFileOffset = 0; 
 
             //Task<ulong> t1 = null;
             //Task t2 = null;
@@ -133,17 +121,14 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
             while (ulFileOffset < ulFileSize);
 
             client.Close(treeId, fileId1);
-
-            //client.LogOff();
             
-            AccountCredential accountCredential = false ? TestConfig.NonAdminAccountCredential : TestConfig.AccountCredential;
-            client.CreateNewSessionSetup(TestConfig.DefaultSecurityPackage, TestConfig.SutComputerName, accountCredential, false);
+            AccountCredential accountCredential = false ? TestConfig.NonAdminAccountCredential : TestConfig.AccountCredential;            
+            client.SessionSetup(TestConfig.DefaultSecurityPackage, TestConfig.SutComputerName, accountCredential, false);
 
             string sharePath = Smb2Utility.GetUncPath(TestConfig.SutComputerName, TestConfig.BasicFileShare);
             client.TreeConnect(sharePath, out treeId);
 
             //fileName = "TestFile.wrf";
-            ////fileName = "NewFile.pdf";
 
             client.Create(
                         treeId,
@@ -153,7 +138,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
                         out contexts,
                         RequestedOplockLevel_Values.OPLOCK_LEVEL_LEASE);
 
-            data = null;
+            //data = null;
             //defaultBufferSize = DEFAULT_WRITE_BUFFER_SIZE_IN_KB;
             //ulFileSize = 4615306; //69903725;
             uiByteRemaining = ulFileSize;
@@ -196,7 +181,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
             
             client.Close(treeId, fileId1);
 
-            client.LogOff();
+            client.LogOffSession();
 
             client.Disconnect();            
         }
