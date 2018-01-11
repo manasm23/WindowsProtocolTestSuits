@@ -1372,7 +1372,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
         {
             TCPResponse objTCPResponse = new TCPResponse();
 
-            objTCPResponse = client.CreateResponse1(messageId, sessionId);
+            objTCPResponse = client.CreateResponse1(messageId);
 
             ProduceCredit(objTCPResponse.responseHeader.MessageId, objTCPResponse.responseHeader);
 
