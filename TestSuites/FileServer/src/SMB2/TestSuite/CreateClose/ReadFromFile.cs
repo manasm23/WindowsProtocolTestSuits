@@ -63,8 +63,8 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
             uint treeId;
             client = InitializeClient(TestConfig.SutIPAddress, out treeId);
             
-            fileName = "NewFile.pdf";
-            //fileName = "NewFile3.pdf";
+            //fileName = "NewFile.pdf";
+            fileName = "NewFile3.pdf";
 
             Smb2CreateContextResponse[] contexts;
             
@@ -78,7 +78,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
 
             //byte[] data;
             uint defaultBufferSize = DEFAULT_WRITE_BUFFER_SIZE_IN_KB;
-            ulong ulFileSize = 4615306;//8407754; //69903725;  //4615306; //26795325
+            ulong ulFileSize = 26795325;//8407754; //69903725;  //4615306; //26795325
             ulong uiByteRemaining = ulFileSize;
             ulong ulFileOffset = 0; 
 

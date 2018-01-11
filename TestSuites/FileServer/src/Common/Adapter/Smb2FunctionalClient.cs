@@ -860,19 +860,21 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
 
         public void LogOffSession(ResponseChecker<LOGOFF_Response> checker = null)
         {
-            Packet_Header header;
-            LOGOFF_Response logoffResponse;
-
-            ulong messageId = generateMessageId(sequenceWindow);
-            ushort creditCharge = generateCreditCharge(1);
-
-            // Need to consume credit from sequence window first according to TD
-            ConsumeCredit(messageId, creditCharge);
-
             if (dicSessionCollection.Count != 0)
             {
                 foreach (ulong key in dicSessionCollection.Keys)
                 {
+                    Packet_Header header;
+                    LOGOFF_Response logoffResponse;
+
+                    checker = null;
+
+                    ulong messageId = generateMessageId(sequenceWindow);
+                    ushort creditCharge = generateCreditCharge(1);
+
+                    // Need to consume credit from sequence window first according to TD
+                    ConsumeCredit(messageId, creditCharge);
+
                     client.LogOff(
                     creditCharge,
                     generateCreditRequest(sequenceWindow, creditGoal, creditCharge),
@@ -886,7 +888,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
 
                     InnerResponseChecker(checker, header, logoffResponse);
                 }
-            }            
+            }
         }
 
         public uint LogOff(ResponseChecker<LOGOFF_Response> checker = null)
