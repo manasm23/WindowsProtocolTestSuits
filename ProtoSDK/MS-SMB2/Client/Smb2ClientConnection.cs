@@ -12,6 +12,15 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
     /// </summary>
     public class Smb2ClientConnection
     {
+        public Smb2ClientConnection()
+        {
+                
+        }
+
+        public Smb2ClientConnection(Dictionary<ulong, Smb2ClientSession> p_SessionTable)
+        {
+            this.SessionTable = p_SessionTable;
+        }
         /// <summary>
         /// A table of authenticated sessions, as specified in section 3.2.1.5, 
         /// that the client has established on this SMB2 transport connection

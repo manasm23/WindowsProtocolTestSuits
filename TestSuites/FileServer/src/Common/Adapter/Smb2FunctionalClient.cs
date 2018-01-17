@@ -56,16 +56,18 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
         #endregion
 
         #region Field
-
-        protected Smb2Client client;
+        
         protected ulong sessionId;
         protected byte[] sessionKey;
         protected byte[] serverGssToken;
         protected DialectRevision selectedDialect;
-        protected SortedSet<ulong> sequenceWindow;
+        
         protected ITestSite baseTestSite;
         protected TestConfigBase testConfig;
-        protected Smb2ClientConnection smb2CliConn;
+
+        public ulong noOfRequest;
+        private FILEID fileId;
+        private uint treeId;
 
         protected ushort sessionChannelSequence;
 
@@ -96,11 +98,25 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
         /// </summary>
         protected ulong maxMidEverProduced;
 
-        protected Dictionary<ulong, Smb2ClientSession> dicSessionCollection;
+        #endregion
+
+        #region Static Fields
+
+        protected static Smb2Client client;
+
+        protected static SortedSet<ulong> sequenceWindow;
+
+        protected static Dictionary<ulong, Smb2ClientSession> dicSessionCollection = new Dictionary<ulong, Smb2ClientSession>();
+
+        protected static Smb2ClientConnection smb2CliConn = new Smb2ClientConnection(dicSessionCollection);
 
         #endregion
 
         public event Action<Packet_Header> RequestSent;
+
+        public delegate void Client_Close_ResponseReceived_EventHandler(Smb2FunctionalClient client);
+
+        public event Client_Close_ResponseReceived_EventHandler CloseCalledEvent;
 
         #region Constructor
 
@@ -136,24 +152,8 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             smb2CliConn.SessionTable = dicSessionCollection;
         }
 
-
-        public Smb2FunctionalClient(Smb2Client p_client, TimeSpan timeout, TestConfigBase testConfig, ITestSite baseTestSite, IPAddress ip)
+        public Smb2FunctionalClient(TimeSpan timeout, TestConfigBase testConfig, ITestSite baseTestSite, IPAddress ip)
         {
-            if (p_client != null)
-            {
-                client = p_client;
-                return;
-            }
-
-            client = new Smb2Client(timeout);
-            this.testConfig = testConfig;
-            client.DisableVerifySignature = this.testConfig.DisableVerifySignature;
-
-            sequenceWindow = new SortedSet<ulong>
-            {
-                0
-            };
-
             // Set to default generators
             generateMessageId = GetDefaultMId;
             generateCreditCharge = GetDefaultCreditCharge;
@@ -161,21 +161,73 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
 
             this.baseTestSite = baseTestSite;
 
-            client.PacketReceived += new Action<Smb2Packet>(client_PacketReceived);
-            client.PacketSending += new Action<Smb2Packet>(client_PacketSent);
-            client.PendingResponseReceived += new Action<Smb2SinglePacket>(client_PendingResponseReceived);
+            this.testConfig = testConfig;
 
             sessionChannelSequence = 0;
 
             creditGoal = 1;
 
+            if (client == null)
+            {
+                client = new Smb2Client(timeout);
 
+                client.DisableVerifySignature = this.testConfig.DisableVerifySignature;
 
-            this.ConnectToServerOverTCP(ip);
-            this.Negotiate(Smb2Utility.GetDialects(DialectRevision.Smb21), testConfig.IsSMB1NegotiateEnabled);
+                sequenceWindow = new SortedSet<ulong>
+            {
+                0
+            };
 
-            p_client = client;
+                client.PacketReceived += new Action<Smb2Packet>(client_PacketReceived);
+                client.PacketSending += new Action<Smb2Packet>(client_PacketSent);
+                client.PendingResponseReceived += new Action<Smb2SinglePacket>(client_PendingResponseReceived);
+
+                this.ConnectToServerOverTCP(ip);
+                this.Negotiate(
+                    Smb2Utility.GetDialects(DialectRevision.Smb21),
+                    testConfig.IsSMB1NegotiateEnabled);
+            }
         }
+
+        //public Smb2FunctionalClient(Smb2Client p_client, TimeSpan timeout, TestConfigBase testConfig, ITestSite baseTestSite, IPAddress ip)
+        //{
+        //    if (p_client != null)
+        //    {
+        //        client = p_client;
+        //        return;
+        //    }
+
+        //    client = new Smb2Client(timeout);
+        //    this.testConfig = testConfig;
+        //    client.DisableVerifySignature = this.testConfig.DisableVerifySignature;
+
+        //    sequenceWindow = new SortedSet<ulong>
+        //    {
+        //        0
+        //    };
+
+        //    // Set to default generators
+        //    generateMessageId = GetDefaultMId;
+        //    generateCreditCharge = GetDefaultCreditCharge;
+        //    generateCreditRequest = GetDefaultCreditRequest;
+
+        //    this.baseTestSite = baseTestSite;
+
+        //    client.PacketReceived += new Action<Smb2Packet>(client_PacketReceived);
+        //    client.PacketSending += new Action<Smb2Packet>(client_PacketSent);
+        //    client.PendingResponseReceived += new Action<Smb2SinglePacket>(client_PendingResponseReceived);
+
+        //    sessionChannelSequence = 0;
+
+        //    creditGoal = 1;
+
+
+
+        //    this.ConnectToServerOverTCP(ip);
+        //    this.Negotiate(Smb2Utility.GetDialects(DialectRevision.Smb21), testConfig.IsSMB1NegotiateEnabled);
+
+        //    p_client = client;
+        //}
         #endregion
 
         #region Properties
@@ -918,16 +970,16 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             return status;
         }
 
-        public Dictionary<ulong, Smb2ClientSession> GetSessionTable()
-        {
-            Smb2ClientSession smb2CliSession = new Smb2ClientSession();
-            smb2CliSession.SessionKey = client.GetSessionKeyForAuthenticatedContext(sessionId);
+        //public Dictionary<ulong, Smb2ClientSession> GetSessionTable()
+        //{
+        //    Smb2ClientSession smb2CliSession = new Smb2ClientSession();
+        //    smb2CliSession.SessionKey = client.GetSessionKeyForAuthenticatedContext(sessionId);
 
-            Smb2ClientConnection smb2CliConn = new Smb2ClientConnection();
-            smb2CliConn.SessionTable.Add(sessionId, smb2CliSession);
+        //    Smb2ClientConnection smb2CliConn = new Smb2ClientConnection();
+        //    smb2CliConn.SessionTable.Add(sessionId, smb2CliSession);
 
-            return smb2CliConn.SessionTable;
-        }
+        //    return smb2CliConn.SessionTable;
+        //}
 
 
         #endregion
@@ -988,6 +1040,8 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             ProduceCredit(messageId, header);
 
             InnerResponseChecker(checker, header, treeConnectResponse);
+
+            this.treeId = treeId;
 
             return status;
         }
@@ -1095,6 +1149,8 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             ProduceCredit(messageId, header);
 
             InnerResponseChecker(checker, header, createResponse);
+
+            this.fileId = fileId;
 
             return status;
         }
@@ -1374,7 +1430,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
         {
             TCPResponse objTCPResponse = new TCPResponse();
 
-            objTCPResponse = client.CreateResponse1(messageId);
+            objTCPResponse = client.CreateResponse1(messageId, sessionId);
 
             ProduceCredit(objTCPResponse.responseHeader.MessageId, objTCPResponse.responseHeader);
 
@@ -1526,6 +1582,21 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             ProduceCredit(messageId, header);
 
             InnerResponseChecker(checker, header, readResponse);
+
+            noOfRequest--;
+
+            if (noOfRequest == 0)
+            {
+                Close(treeId, fileId);
+
+                if(CloseCalledEvent != null)
+                {
+                    CloseCalledEvent(this);
+                }
+                //LogOffSession();
+
+                //client.Disconnect();
+            }
 
             return response.Header.Status;
         }
@@ -2858,7 +2929,6 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
 
         #endregion
 
-
         #region Protected Methods
         protected void ConsumeCredit(ulong startMId, ushort creditCharge)
         {
@@ -3149,13 +3219,13 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             {
                 checker(header, response);
             }
-            else if (header.Status != Smb2Status.STATUS_SUCCESS)
-            {
-                throw new InvalidOperationException(
-                    string.Format("Unexpected status {0} for {1}",
-                    Smb2Status.GetStatusCode(header.Status),
-                    header.Command));
-            }
+            //else if (header.Status != Smb2Status.STATUS_SUCCESS)
+            //{
+            //    throw new InvalidOperationException(
+            //        string.Format("Unexpected status {0} for {1}",
+            //        Smb2Status.GetStatusCode(header.Status),
+            //        header.Command));
+            //}
         }
 
         private void client_PacketSent(Smb2Packet obj)

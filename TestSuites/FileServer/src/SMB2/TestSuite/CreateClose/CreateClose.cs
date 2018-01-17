@@ -240,47 +240,38 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
             //    {
             //        CheckCreateResponse(isNonAdmin, createOption, accessMask, header, response, fileNameType);
             //    });
-            client.StopThreads();
+            
             List<ulong> messageIdsList = new List<ulong>();
 
-            //Task t1 = Task.Factory.StartNew(() =>
-            //{
             for (int i = 0; i <= 3; i++)
             {
                 AsyncCreateRequest(client, isDirectory, fileNameType, createOption, createDisposition, treeId, accessMask, messageIdsList);
             }
-            //});
-
-            //t1.Wait();
-
-            //messageIdsList.Add(t2.Result);
-            //if (t1.IsCompleted)
-            //{
+            
             foreach (ulong messageId in messageIdsList)
             {
-                Task<TCPResponse> taskResponse = Task.Factory.StartNew(() => client.CreateResponse1(messageId,
+                TCPResponse objTcp =  client.CreateResponse1(messageId,
                     checker: (header, response) =>
                     {
                         CheckCreateResponse(isNonAdmin, createOption, accessMask, header, response, fileNameType);
-                    }));
+                    });
 
-                if (taskResponse.Result.status == Smb2Status.STATUS_SUCCESS)
-                {
-                    BaseTestSite.Log.Add(LogEntryKind.TestStep, "Tear down the client by sending the following requests: CLOSE; TREE_DISCONNECT; LOG_OFF.");
-                    client.Close(treeId, taskResponse.Result.fileId);
-                }
+                //objTcp.
+                //if (taskResponse.Result.status == Smb2Status.STATUS_SUCCESS)
+                //{
+                //    BaseTestSite.Log.Add(LogEntryKind.TestStep, "Tear down the client by sending the following requests: CLOSE; TREE_DISCONNECT; LOG_OFF.");
+                //    client.Close(treeId, taskResponse.Result.fileId);
+                //}
             }
 
             //if (status == Smb2Status.STATUS_SUCCESS)
             //{
-            //    BaseTestSite.Log.Add(LogEntryKind.TestStep, "Tear down the client by sending the following requests: CLOSE; TREE_DISCONNECT; LOG_OFF.");
+            //BaseTestSite.Log.Add(LogEntryKind.TestStep, "Tear down the client by sending the following requests: CLOSE; TREE_DISCONNECT; LOG_OFF.");
             //client.Close(treeId, fileId);
             //}
-
-            client.StartThreads();
+            
             client.TreeDisconnect(treeId);
-            client.LogOff();
-            //}
+            client.LogOff();            
         }
 
         private void AsyncCreateRequest(Smb2FunctionalClient client, bool isDirectory, FileNameType fileNameType, CreateOptions_Values createOption,
@@ -295,16 +286,7 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.SMB2.TestSuite.CreateClose
                  createOption,
                  accessMask: accessMask,
                  createDisposition: createDisposition));
-
-            //ulong msgId = client.Create1(
-            //     treeId,
-            //     fileName,
-            //     createOption,
-            //     accessMask: accessMask,
-            //     createDisposition: createDisposition);
-
-            //Task.Factory.StartNew(() => WaitForResponse(t1.Result, client));            
-            //t1.Wait();
+           
             messageIdsList.Add(t1.Result);
         }
 

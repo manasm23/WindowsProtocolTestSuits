@@ -197,6 +197,14 @@ namespace Microsoft.Protocols.TestSuites.FileSharing.Common.Adapter
             set;
         }
 
+        public int NoOfSessions
+        {
+            get
+            {
+                return Int32.Parse(GetProperty("NoOfSessions"));
+            }
+        }
+
         #region Network Configuration
         public IPAddress ClientNic1IPAddress
         {

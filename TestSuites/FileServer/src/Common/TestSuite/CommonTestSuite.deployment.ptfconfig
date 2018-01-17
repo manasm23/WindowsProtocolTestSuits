@@ -33,6 +33,12 @@
 
     <Group name="Common">
 
+      <Property name="NoOfSessions" value="3">
+        <Description>
+          No. of Sessions for SMB2 connection over transport
+        </Description>
+      </Property>
+      
       <Property name="Timeout" value="600">
         <Description>
           Timeout in seconds for SMB2 connection over transport

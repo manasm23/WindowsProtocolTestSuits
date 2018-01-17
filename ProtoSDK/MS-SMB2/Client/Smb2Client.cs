@@ -1716,11 +1716,11 @@ namespace Microsoft.Protocols.TestTools.StackSdk.FileAccessService.Smb2
 
 
 
-        public TCPResponse CreateResponse1(ulong messageId)
+        public TCPResponse CreateResponse1(ulong messageId, ulong sessionId)
         {
             TCPResponse objTCPResponse = new TCPResponse();
 
-            var response = ExpectPacket<Smb2CreateResponsePacket>(messageId);
+            var response = ExpectPacket<Smb2CreateResponsePacket>(messageId, sessionId);
 
             objTCPResponse.fileId = response.PayLoad.FileId;
 
